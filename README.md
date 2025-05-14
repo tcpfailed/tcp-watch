@@ -1,3 +1,4 @@
+My first big project, cleaner repository. ENJOY
 # TCP Watch v1.0.1
 ![License](https://img.shields.io/badge/license-Custom%20BSD-blue)
 ![Version](https://img.shields.io/badge/version-1.0.1-green)
@@ -62,10 +63,6 @@ sudo yum install libpcap-devel    # For CentOS/RHEL
 🔧 Compiling
 
 go build tcpwatch.go
-
-💻 Usage
-
-bash / open ssh
 
 # Basic usage
 go run tcpwatch.go (non built)
