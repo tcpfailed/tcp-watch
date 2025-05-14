@@ -292,5 +292,5 @@ wss.on('connection', (ws) => {
 
 const PORT = 1234;
 http.listen(PORT, () => {
-    console.log(`TCP Watch Web running on http://localhost:${PORT}`);
+    console.log(`TCP Watch Web Version running on http://localhost:${PORT}`);
 });
