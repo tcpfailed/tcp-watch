@@ -46,19 +46,20 @@ sudo yum install libpcap-devel    # For CentOS/RHEL
 🔧 Installation
 
 1. apt-get update
-2. apt install golang-go
-3. apt install git
-4. apt install libpcap-dev
-5. apt install apache2 (optional if you want the web verison aswell)
-6. apt install npm
-7. npm init -y && npm install express ws
-8. git clone https://github.com/TCPTHEGOAT/tcp-watch/
-9. cd tcp-watch
-10. go mod init tcpwatch
-11. go mod tidy
-12. edit line "966 : return ipv4.String() + ":22" **and change :22 to the port you want to monitor**
-13. edit line "439 : handle, err := pcap.OpenLive("eth0", 1600, true, pcap.BlockForever)" **and replace eth0 with your interface**
-14. go run tcpwatch.go
+2. apt install screen
+3. apt install golang-go
+4. apt install git
+5. apt install libpcap-dev
+6. apt install apache2 (optional if you want the web verison aswell)
+7. apt install npm
+8. npm init -y && npm install express ws
+9. git clone https://github.com/TCPTHEGOAT/tcp-watch/
+10. cd tcp-watch
+11. go mod init tcpwatch
+12. go mod tidy
+13. edit line "966 : return ipv4.String() + ":22" **and change :22 to the port you want to monitor**
+14. edit line "439 : handle, err := pcap.OpenLive("eth0", 1600, true, pcap.BlockForever)" **and replace eth0 with your interface**
+15. go run tcpwatch.go
 
 🔧 Compiling
 
