@@ -13,6 +13,9 @@ import (
 	"strings"
 	"syscall"
   "time"
+  "bytes"
+  "encoding/json"
+  "net/http"
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/pcap"
   "github.com/google/gopacket/pcapgo"
@@ -50,6 +53,10 @@ const (
 )
 
 const (
+    DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1372313671367397446/BgBpnF9lyyExy9T5FOHDmjwxyfj3rGYDn8b9xOpTezyXmPinYxs6u8SWylvjujC4ZoCJ"
+)
+
+const (
     ATTACK_SYN  = "SYN Flood"
     ATTACK_ACK  = "ACK Flood"
     ATTACK_FIN  = "FIN Flood"
@@ -62,6 +69,35 @@ const (
     ATTACK_UDP  = "UDP Flood"
     ATTACK_ICMP = "ICMP Flood"
 )
+
+type DiscordMessage struct {
+    Content     string `json:"content,omitempty"`
+    Username    string `json:"username,omitempty"`
+    AvatarURL   string `json:"avatar_url,omitempty"`
+    Embeds      []DiscordEmbed `json:"embeds,omitempty"`
+}
+
+type DiscordEmbed struct {
+    Title       string `json:"title,omitempty"`
+    Description string `json:"description,omitempty"`
+    Color       int    `json:"color,omitempty"`
+    Fields      []DiscordField `json:"fields,omitempty"`
+    Timestamp   string `json:"timestamp,omitempty"`
+}
+
+type DiscordField struct {
+    Name   string `json:"name"`
+    Value  string `json:"value"`
+    Inline bool   `json:"inline,omitempty"`
+}
+
+type AttackState struct {
+    isOngoing    bool
+    startTime    time.Time
+    peakPPS      int
+    peakMbps     float64
+    attackerIPs  map[string]bool
+}
 
 type AttackStats struct {
     synCount  int
@@ -86,37 +122,39 @@ type BlacklistEntry struct {
 }
 
 type TCPWatch struct {
-	startTime      time.Time
-	packetsPerSec  int
-	lastHighestPPS int
-	incomingIPs    int
-	currentMbit    float64
-	avgMbit        float64
-	minMbit        float64
-	maxMbit        float64
-	totalGBytes    float64
-	values         []float64
-	systemIP       string
-	cpuModel       string
-	cpuUsage       float64
-	ramUsed        int
-	ramTotal       int
-	ramFree        int
-	prevCPUTotal   float64
-	prevCPUIdle    float64
-	blacklistedIPs int
-  isCapturing    bool
-  currentPcapFile string
-  blockedIPs     map[string]time.Time  
-  blacklistCount  int                  
-  memoryUsed    float64
-  memoryFree    float64
-  swapUsed      float64
-  swapFree      float64
-  processCount  int
-  attackingIPs  map[string]string
-  lastDisplayIndex int
-  whitelistedIPs map[string]bool
+    startTime       time.Time
+    packetsPerSec   int
+    lastHighestPPS  int
+    incomingIPs     int
+    currentMbit     float64
+    avgMbit         float64
+    minMbit         float64
+    maxMbit         float64
+    totalGBytes     float64
+    values          []float64
+    systemIP        string
+    cpuModel        string
+    cpuUsage        float64
+    ramUsed         int
+    ramTotal        int
+    ramFree         int
+    prevCPUTotal    float64
+    prevCPUIdle     float64
+    blacklistedIPs  int
+    isCapturing     bool
+    currentPcapFile string
+    blockedIPs      map[string]time.Time
+    blacklistCount  int
+    memoryUsed      float64
+    memoryFree      float64
+    swapUsed        float64
+    swapFree        float64
+    processCount    int
+    attackingIPs    map[string]string
+    lastDisplayIndex int
+    whitelistedIPs  map[string]bool
+    attackState     AttackState
+    lastAlertTime   time.Time
 }
 
 func getTerminalSize() (width, height int) {
@@ -141,6 +179,65 @@ func getTerminalSize() (width, height int) {
 		width = MIN_WIDTH
 	}
 	return width, height
+}
+
+func sendAttackAlert(tw *TCPWatch, newIP string, attackType string) error {
+    message := DiscordMessage{
+        Username:  "TCP Watch Alert",
+        AvatarURL: "https://i.imgur.com/your-alert-icon.png",
+        Embeds: []DiscordEmbed{
+            {
+                Title:       "Attack Detected",
+                Description: fmt.Sprintf("Attack detected and mitigated by TCP Watch"),
+                Color:       16711680, 
+                Fields: []DiscordField{
+                    {
+                        Name:   "Traffic Stats",
+                        Value:  fmt.Sprintf("```\nCurrent PPS: %d\nPeak PPS: %d\nCurrent Mbps: %.2f\nPeak Mbps: %.2f\n```",
+                            tw.packetsPerSec,
+                            tw.attackState.peakPPS,
+                            tw.currentMbit,
+                            tw.attackState.peakMbps),
+                        Inline: false,
+                    },
+                    {
+                        Name:   "New Attacker IP",
+                        Value:  fmt.Sprintf("`%s`", newIP),
+                        Inline: true,
+                    },
+                    {
+                        Name:   "Attack Type",
+                        Value:  fmt.Sprintf("`%s`", attackType),
+                        Inline: true,
+                    },
+                    {
+                        Name:   "Attack Duration",
+                        Value:  fmt.Sprintf("`%s`", time.Since(tw.attackState.startTime).Round(time.Second)),
+                        Inline: true,
+                    },
+                    {
+                        Name:   "Total IPs Blocked",
+                        Value:  fmt.Sprintf("`%d`", len(tw.attackState.attackerIPs)),
+                        Inline: true,
+                    },
+                },
+                Timestamp: time.Now().Format(time.RFC3339),
+            },
+        },
+    }
+
+    jsonData, err := json.Marshal(message)
+    if err != nil {
+        return err
+    }
+
+    resp, err := http.Post(DISCORD_WEBHOOK_URL, "application/json", bytes.NewBuffer(jsonData))
+    if err != nil {
+        return err
+    }
+    defer resp.Body.Close()
+
+    return nil
 }
 
 func setTerminalSize() {
@@ -209,26 +306,81 @@ func detectAttack(ipData *struct {
 
 func newTCPWatch() *TCPWatch {
     tw := &TCPWatch{
-        startTime:      time.Now(),
-        values:         make([]float64, 0, GRAPH_WIDTH),
-        minMbit:       math.MaxFloat64,
-        ramTotal:      2000,
-        isCapturing:   false,
+        attackState: AttackState{
+            isOngoing: false,
+            attackerIPs: make(map[string]bool),
+        },
+        startTime:        time.Now(),
+        values:          make([]float64, 0, GRAPH_WIDTH),
+        minMbit:         math.MaxFloat64,
+        ramTotal:        2000,
+        isCapturing:     false,
         currentPcapFile: "",
-        blockedIPs:    make(map[string]time.Time),
-        blacklistCount: 0,
-        attackingIPs: make(map[string]string),
+        blockedIPs:      make(map[string]time.Time),
+        blacklistCount:  0,
+        attackingIPs:    make(map[string]string),
         lastDisplayIndex: 0,
         whitelistedIPs: map[string]bool{
-            "IP": true,
-            "IP":  true,
-            "127.0.0.1":     true,  
-            "::1":           true,  
+            "REPLACEIP": true,
+            "REPLACEIP":  true,
+            "127.0.0.1":     true,
+            "::1":           true,
         },
     }
+
     tw.systemIP = tw.getServerIP()
     tw.updateSystemInfo()
     return tw
+}
+
+func sendDiscordAlert(ip string, reason string, details string) error {
+    message := DiscordMessage{
+        Username:  "TCP Watch Alert",
+        AvatarURL: "https://www.svgrepo.com/show/360745/shield-half.svg", 
+        Embeds: []DiscordEmbed{
+            {
+                Title:       "Attack Detected",
+                Description: "TCP Watch has detected and blocked an attack",
+                Color:       16711680, 
+                Fields: []DiscordField{
+                    {
+                        Name:   "Attacker IP",
+                        Value:  fmt.Sprintf("`%s`", ip),
+                        Inline: true,
+                    },
+                    {
+                        Name:   "Attack Type",
+                        Value:  fmt.Sprintf("`%s`", reason),
+                        Inline: true,
+                    },
+                    {
+                        Name:   "Details",
+                        Value:  details,
+                        Inline: false,
+                    },
+                },
+                Timestamp: time.Now().Format(time.RFC3339),
+            },
+        },
+    }
+
+    jsonData, err := json.Marshal(message)
+    if err != nil {
+        return fmt.Errorf("error marshaling Discord message: %v", err)
+    }
+
+    resp, err := http.Post(DISCORD_WEBHOOK_URL, "application/json", bytes.NewBuffer(jsonData))
+    if err != nil {
+        return fmt.Errorf("error sending Discord alert: %v", err)
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+        body, _ := ioutil.ReadAll(resp.Body)
+        return fmt.Errorf("Discord API error: %s - %s", resp.Status, string(body))
+    }
+
+    return nil
 }
 
 func (tw *TCPWatch) logBlacklistedIP(entry BlacklistEntry) {
@@ -258,6 +410,7 @@ func (tw *TCPWatch) blacklistIP(ip string, srcPort string, targetPort string, pr
     if _, exists := tw.blockedIPs[ip]; exists {
         return nil
     }
+
     ipAddr := strings.Split(ip, ":")[0]
     cmd := exec.Command("iptables", "-A", "INPUT", "-s", ipAddr, "-j", "DROP")
     err := cmd.Run()
@@ -266,15 +419,38 @@ func (tw *TCPWatch) blacklistIP(ip string, srcPort string, targetPort string, pr
     }
 
     entry := BlacklistEntry{
-        IP:          ip,
-        SourcePort:  srcPort,
-        Protocol:    protocol,
-        TargetPort:  targetPort,
-        Reason:      reason,
-        Timestamp:   time.Now(),
+        IP:         ip,
+        SourcePort: srcPort,
+        Protocol:   protocol,
+        TargetPort: targetPort,
+        Reason:     reason,
+        Timestamp:  time.Now(),
     }
 
     tw.logBlacklistedIP(entry)
+
+    if tw.attackState.isOngoing {
+        if !tw.attackState.attackerIPs[ip] {
+            tw.attackState.attackerIPs[ip] = true
+            go func() {
+                alertDetails := fmt.Sprintf(
+                    "```\nTraffic Stats:\nCurrent PPS: %d\nPeak PPS: %d\n"+
+                    "Current Mbps: %.2f\nPeak Mbps: %.2f\n"+
+                    "Attack Duration: %s\nTotal IPs Blocked: %d\n\n"+
+                    "Connection Details:\nSource Port: %s\nTarget Port: %s\n"+
+                    "Protocol: %s\nReason: %s```",
+                    tw.packetsPerSec, tw.attackState.peakPPS,
+                    tw.currentMbit, tw.attackState.peakMbps,
+                    time.Since(tw.attackState.startTime).Round(time.Second),
+                    len(tw.attackState.attackerIPs),
+                    srcPort, targetPort, protocol, reason)
+                
+                if err := sendDiscordAlert(ip, reason, alertDetails); err != nil {
+                    fmt.Printf("Failed to send Discord alert: %v\n", err)
+                }
+            }()
+        }
+    }
 
     tw.blockedIPs[ip] = entry.Timestamp
     tw.blacklistCount++
@@ -537,22 +713,39 @@ ProcessStats:
         tw.lastHighestPPS = packets
     }
 
-    if (tw.incomingIPs > 100 || packets > 300) && !tw.isCapturing {
-        tw.isCapturing = true
-        go func() {
-            reason := "high_traffic"
-            if tw.incomingIPs > 100 {
-                reason = "high_ips"
+    if (tw.incomingIPs > 200 || packets > 3000) {
+        if !tw.attackState.isOngoing {
+            tw.attackState.isOngoing = true
+            tw.attackState.startTime = time.Now()
+            tw.attackState.attackerIPs = make(map[string]bool)
+            tw.attackState.peakPPS = packets
+            tw.attackState.peakMbps = tw.currentMbit
+        } else {
+            if packets > tw.attackState.peakPPS {
+                tw.attackState.peakPPS = packets
             }
-            tw.currentPcapFile = startPacketCapture("eth0", reason)
-            time.Sleep(60 * time.Second)
-            tw.isCapturing = false
-            tw.currentPcapFile = "" 
-        }()
+            if tw.currentMbit > tw.attackState.peakMbps {
+                tw.attackState.peakMbps = tw.currentMbit
+            }
+        }
 
-        if packets > 300 {
+        if !tw.isCapturing {
+            tw.isCapturing = true
+            go func() {
+                reason := "high_traffic"
+                if tw.incomingIPs > 200 {
+                    reason = "high_ips"
+                }
+                tw.currentPcapFile = startPacketCapture("eth0", reason)
+                time.Sleep(60 * time.Second)
+                tw.isCapturing = false
+                tw.currentPcapFile = ""
+            }()
+        }
+
+        if packets > 3000 {
             for ip, ipData := range packetsPerIP {
-                if ipData.total > 30 { 
+                if ipData.total > 30 {
                     tw.blacklistIP(ip,
                         ipData.srcPort,
                         ipData.dstPort,
@@ -561,6 +754,10 @@ ProcessStats:
                 }
             }
         }
+    } else if tw.attackState.isOngoing && packets < 200 && tw.currentMbit < 50 {
+        tw.attackState.isOngoing = false
+        tw.attackState.peakPPS = 0
+        tw.attackState.peakMbps = 0
     }
 
     mbits := float64(totalBytes*8) / 1000000
