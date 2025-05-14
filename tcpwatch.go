@@ -53,7 +53,7 @@ const (
 )
 
 const (
-    DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1372313671367397446/BgBpnF9lyyExy9T5FOHDmjwxyfj3rGYDn8b9xOpTezyXmPinYxs6u8SWylvjujC4ZoCJ"
+    DISCORD_WEBHOOK_URL = "WEBHOOK"
 )
 
 const (
