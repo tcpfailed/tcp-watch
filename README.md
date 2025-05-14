@@ -47,7 +47,7 @@ sudo yum install libpcap-devel    # For CentOS/RHEL
 1. apt-get update
 2. apt install golang-go
 3. apt install git
-4. sudo apt-get install libpcap-dev
+4. apt install libpcap-dev
 5. apt install apache2 (optional if you want the web verison aswell)
 6. apt install npm
 7. npm init -y && npm install express ws
