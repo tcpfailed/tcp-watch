@@ -20,6 +20,7 @@ A real-time network monitoring & DDoS protection tool written in Go, featuring l
   - IP blacklisting
   - Multiple attack pattern recognitions
   - Multiple types of ddos detection for robust detection
+  - BPF creation system has been added
 
 - **System Monitoring**
   - CPU usage tracking
