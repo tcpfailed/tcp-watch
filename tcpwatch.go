@@ -159,7 +159,7 @@ func (tw *TCPWatch) startPacketAnalysis(interfaceName string) {
 			cmd := exec.Command("tcpdump", "-i", interfaceName, "-n", "-v", "-c", "1000")
 			output, err := cmd.Output()
 			if err != nil {
-				fmt.Printf("Tcpdump error: %v\n", err)
+				fmt.Printf("%v\n", err)
 				time.Sleep(time.Second)
 				continue
 			}
@@ -288,14 +288,14 @@ func (tw *TCPWatch) applyBPFRule(rule string) {
     
     cmd := exec.Command("tcpdump", "-i", "eth0", rule)
     if err := cmd.Start(); err != nil {
-        fmt.Printf("Failed to apply BPF rule: %v\n", err)
+        fmt.Printf("%v\n", err)
         return
     }
 
     tw.bpfRules[rule] = time.Now().String()
 
     
-    fmt.Printf("New BPF Rule Applied:\n%s\n", rule)
+    fmt.Printf("\n%s\n", rule)
 }
 
 func extractPattern(line string) string {
