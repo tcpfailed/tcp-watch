@@ -1,122 +1,412 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"io/ioutil"
-  "bufio"
 	"math"
 	"net"
 	"os"
 	"os/exec"
 	"os/signal"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
-  "time"
+	"time"
+
 	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
-  "github.com/google/gopacket/pcapgo"
-  "github.com/google/gopacket/layers"
+	"github.com/google/gopacket/pcapgo"
 )
 
 const (
-    VERSION = "v1.0.1"
-    
-    colorReset     = "\033[0m"
-    colorRed       = "\033[31m"
-    colorYellow    = "\033[33m"
-    colorGreen     = "\033[32m"    
-    colorLightGreen = "\033[92m"
-    colorWhite     = "\033[97m"
-    colorGray      = "\033[90m"
-    colorYellowBg  = "\033[30;43m"
-    colorBgReset   = "\033[49m"
-    
-    boxVertical    = "║"
-    boxHorizontal  = "═"
-    boxTopLeft     = "╔"
-    boxTopRight    = "╗"
-    boxBottomLeft  = "╚"
-    boxBottomRight = "╝"
-    boxTeeRight    = "╣"
-    boxTeeLeft     = "╠"
-    boxTeeDown     = "╦"
-    boxTeeUp       = "╩"
-    
-    GRAPH_WIDTH  = 70
-    GRAPH_HEIGHT = 25
-    MIN_WIDTH    = 80
-    MIN_HEIGHT   = 2
+	VERSION = "v1.0.1"
+
+	colorReset     = "\033[0m"
+	colorRed       = "\033[31m"
+	colorYellow    = "\033[33m"
+	colorGreen     = "\033[32m"
+	colorLightGreen = "\033[92m"
+	colorWhite     = "\033[97m"
+	colorGray      = "\033[90m"
+	colorYellowBg  = "\033[30;43m"
+	colorBgReset   = "\033[49m"
+
+	boxVertical    = "║"
+	boxHorizontal  = "═"
+	boxTopLeft     = "╔"
+	boxTopRight    = "╗"
+	boxBottomLeft  = "╚"
+	boxBottomRight = "╝"
+	boxTeeRight    = "╣"
+	boxTeeLeft     = "╠"
+	boxTeeDown     = "╦"
+	boxTeeUp       = "╩"
+
+	GRAPH_WIDTH  = 70
+	GRAPH_HEIGHT = 25
+	MIN_WIDTH    = 80
+	MIN_HEIGHT   = 2
 )
 
 const (
-    ATTACK_SYN  = "SYN Flood"
-    ATTACK_ACK  = "ACK Flood"
-    ATTACK_FIN  = "FIN Flood"
-    ATTACK_PSH  = "PSH Flood"
-    ATTACK_FRAG = "Fragment Flood"
-    ATTACK_AMP  = "Amplification"
-    ATTACK_GRE  = "GRE Flood"
-    ATTACK_STD  = "STD Flood"
-    ATTACK_XMAS = "XMAS Scan"
-    ATTACK_UDP  = "UDP Flood"
-    ATTACK_ICMP = "ICMP Flood"
+	ATTACK_SYN  = "SYN Flood"
+	ATTACK_ACK  = "ACK Flood"
+	ATTACK_FIN  = "FIN Flood"
+	ATTACK_PSH  = "PSH Flood"
+	ATTACK_FRAG = "Fragment Flood"
+	ATTACK_AMP  = "Amplification"
+	ATTACK_GRE  = "GRE Flood"
+	ATTACK_STD  = "STD Flood"
+	ATTACK_XMAS = "XMAS Scan"
+	ATTACK_UDP  = "UDP Flood"
+	ATTACK_ICMP = "ICMP Flood"
 )
+
+type AttackPattern struct {
+	Pattern     string
+	Count       int
+	FirstSeen   time.Time
+	LastSeen    time.Time
+	BPFRule     string
+	PacketSizes []int
+	Protocols   map[string]int
+	Flags       map[string]int
+	Ports       map[int]int
+}
+
+type PatternAnalyzer struct {
+	patterns   map[string]*AttackPattern
+	mu         sync.RWMutex
+	sampleSize int
+	threshold  int
+}
 
 type AttackStats struct {
-    synCount  int
-    ackCount  int
-    finCount  int
-    pshCount  int
-    fragCount int
-    greCount  int
-    udpCount  int
-    icmpCount int
-    xmasCount int
-    ampFactor float64
+	synCount  int
+	ackCount  int
+	finCount  int
+	pshCount  int
+	fragCount int
+	greCount  int
+	udpCount  int
+	icmpCount int
+	xmasCount int
+	ampFactor float64
+}
+type AttackState struct {
+    isOngoing    bool
+    startTime    time.Time
+    peakPPS      int
+    peakMbps     float64
+    attackerIPs  map[string]bool
 }
 
 type BlacklistEntry struct {
-    IP          string
-    SourcePort  string
-    Protocol    string
-    TargetPort  string
-    Reason      string
-    Timestamp   time.Time
+	IP          string
+	SourcePort  string
+	Protocol    string
+	TargetPort  string
+	Reason      string
+	Timestamp   time.Time
 }
 
 type TCPWatch struct {
-	startTime      time.Time
-	packetsPerSec  int
-	lastHighestPPS int
-	incomingIPs    int
-	currentMbit    float64
-	avgMbit        float64
-	minMbit        float64
-	maxMbit        float64
-	totalGBytes    float64
-	values         []float64
-	systemIP       string
-	cpuModel       string
-	cpuUsage       float64
-	ramUsed        int
-	ramTotal       int
-	ramFree        int
-	prevCPUTotal   float64
-	prevCPUIdle    float64
-	blacklistedIPs int
-  isCapturing    bool
-  currentPcapFile string
-  blockedIPs     map[string]time.Time  
-  blacklistCount  int                  
-  memoryUsed    float64
-  memoryFree    float64
-  swapUsed      float64
-  swapFree      float64
-  processCount  int
-  attackingIPs  map[string]string
-  lastDisplayIndex int
-  whitelistedIPs map[string]bool
+	startTime       time.Time
+	packetsPerSec   int
+	lastHighestPPS  int
+	incomingIPs     int
+	currentMbit     float64
+	avgMbit         float64
+	minMbit         float64
+	maxMbit         float64
+	totalGBytes     float64
+	values          []float64
+	systemIP        string
+	cpuModel        string
+	cpuUsage        float64
+	ramUsed         int
+	ramTotal        int
+	ramFree         int
+	prevCPUTotal    float64
+	prevCPUIdle     float64
+	blacklistedIPs  int
+	isCapturing     bool
+	currentPcapFile string
+	blockedIPs      map[string]time.Time
+	blacklistCount  int
+	memoryUsed      float64
+	memoryFree      float64
+	swapUsed        float64
+	swapFree        float64
+	processCount    int
+	attackingIPs    map[string]string
+	lastDisplayIndex int
+	whitelistedIPs  map[string]bool
+	analyzer        *PatternAnalyzer
+	bpfRules        map[string]string
+	attackState     AttackState
+	lastAlertTime   time.Time 
+}
+
+func (tw *TCPWatch) startPacketAnalysis(interfaceName string) {
+	go func() {
+		for {
+			cmd := exec.Command("tcpdump", "-i", interfaceName, "-n", "-v", "-c", "1000")
+			output, err := cmd.Output()
+			if err != nil {
+				fmt.Printf("Tcpdump error: %v\n", err)
+				time.Sleep(time.Second)
+				continue
+			}
+
+			tw.analyzePackets(string(output))
+			time.Sleep(time.Second)
+		}
+	}()
+}
+
+func (tw *TCPWatch) extractPattern(line string) string {
+    if strings.Contains(line, "SYN") {
+        return "SYN_flood"
+    } else if strings.Contains(line, "UDP") {
+        return "UDP_flood"
+    }
+    return ""
+}
+
+func (tw *TCPWatch) analyzePackets(output string) {
+    lines := strings.Split(output, "\n")
+    for _, line := range lines {
+        if line == "" {
+            continue
+        }
+
+        pattern := tw.extractPattern(line)
+        if pattern == "" {
+            continue
+        }
+
+        tw.analyzer.mu.Lock()
+        if _, exists := tw.analyzer.patterns[pattern]; !exists {
+            tw.analyzer.patterns[pattern] = &AttackPattern{
+                Pattern:     pattern,
+                FirstSeen:   time.Now(),
+                Protocols:   make(map[string]int),
+                Flags:       make(map[string]int),
+                Ports:       make(map[int]int),
+                PacketSizes: make([]int, 0),
+            }
+        }
+
+        p := tw.analyzer.patterns[pattern]
+        p.Count++
+        p.LastSeen = time.Now()
+
+        proto := extractProtocol(line)
+        if proto != "" {
+            p.Protocols[proto]++
+        }
+
+        flags := extractFlags(line)
+        for _, flag := range flags {
+            p.Flags[flag]++
+        }
+
+        ports := extractPorts(line)
+        for _, port := range ports {
+            p.Ports[port]++
+        }
+
+        size := extractPacketSize(line)
+        if size > 0 {
+            p.PacketSizes = append(p.PacketSizes, size)
+        }
+
+        if p.Count >= tw.analyzer.threshold && p.BPFRule == "" {
+            p.BPFRule = tw.generateBPFRule(p)
+            tw.applyBPFRule(p.BPFRule)
+        }
+
+        tw.analyzer.mu.Unlock()
+    }
+}
+
+
+func (tw *TCPWatch) generateBPFRule(pattern *AttackPattern) string {
+    parts := strings.Split(pattern.Pattern, ",")
+    if len(parts) < 6 {
+        return "" 
+    }
+
+    var ruleParts []string
+
+    
+    ipPart := strings.Split(parts[0], "=")[1]
+    if ipPart != "" && ipPart != "unknown" {
+        ruleParts = append(ruleParts, fmt.Sprintf("host %s", ipPart))
+    }
+
+    
+    protocolPart := strings.Split(parts[1], "=")[1]
+    if protocolPart != "" {
+        ruleParts = append(ruleParts, protocolPart)
+    }
+
+    
+    if protocolPart == "TCP" || protocolPart == "UDP" {
+        srcPortPart := strings.Split(parts[2], "=")[1]
+        dstPortPart := strings.Split(parts[3], "=")[1]
+        flagsPart := strings.Split(parts[4], "=")[1]
+
+        if srcPortPart != "" && srcPortPart != "unknown" {
+            ruleParts = append(ruleParts, fmt.Sprintf("src port %s", srcPortPart))
+        }
+        if dstPortPart != "" && dstPortPart != "unknown" {
+            ruleParts = append(ruleParts, fmt.Sprintf("dst port %s", dstPortPart))
+        }
+        if flagsPart != "" {
+            ruleParts = append(ruleParts, fmt.Sprintf("tcp[tcpflags] & (%s) != 0", flagsPart))
+        }
+    }
+
+    
+    lengthPart := strings.Split(parts[5], "=")[1]
+    if lengthPart != "" && lengthPart != "0" {
+        ruleParts = append(ruleParts, fmt.Sprintf("len >= %s", lengthPart))
+    }
+
+    return strings.Join(ruleParts, " and ")
+}
+
+
+func (tw *TCPWatch) applyBPFRule(rule string) {
+    
+    cmd := exec.Command("tcpdump", "-i", "eth0", rule)
+    if err := cmd.Start(); err != nil {
+        fmt.Printf("Failed to apply BPF rule: %v\n", err)
+        return
+    }
+
+    tw.bpfRules[rule] = time.Now().String()
+
+    
+    fmt.Printf("New BPF Rule Applied:\n%s\n", rule)
+}
+
+func extractPattern(line string) string {
+    return ""
+}
+
+func extractProtocol(line string) string {
+    protocols := []string{"tcp", "udp", "icmp"}
+    for _, proto := range protocols {
+        if strings.Contains(strings.ToLower(line), proto) {
+            return proto
+        }
+    }
+    return ""
+}
+
+func extractFlags(line string) []string {
+    var flags []string
+    flagPatterns := map[string]string{
+        "SYN": `\[S\]`,
+        "ACK": `\[A\]`,
+        "FIN": `\[F\]`,
+        "RST": `\[R\]`,
+        "PSH": `\[P\]`,
+        "URG": `\[U\]`,
+    }
+
+    for flag, pattern := range flagPatterns {
+        if matched, _ := regexp.MatchString(pattern, line); matched {
+            flags = append(flags, flag)
+        }
+    }
+    return flags
+}
+
+func extractPorts(line string) []int {
+    var ports []int
+    portPattern := regexp.MustCompile(`port (\d+)`)
+    matches := portPattern.FindAllStringSubmatch(line, -1)
+    for _, match := range matches {
+        if port, err := strconv.Atoi(match[1]); err == nil {
+            ports = append(ports, port)
+        }
+    }
+    return ports
+}
+
+func extractPacketSize(line string) int {
+    sizePattern := regexp.MustCompile(`length (\d+)`)
+    if match := sizePattern.FindStringSubmatch(line); len(match) > 1 {
+        size, _ := strconv.Atoi(match[1])
+        return size
+    }
+    return 0
+}
+
+func getMostCommon(m map[string]int) string {
+    var maxKey string
+    var maxVal int
+    for k, v := range m {
+        if v > maxVal {
+            maxKey = k
+            maxVal = v
+        }
+    }
+    return maxKey
+}
+
+func getMostCommonFlags(flags map[string]int) []string {
+    threshold := 0.7 
+    var result []string
+    total := 0
+    for _, count := range flags {
+        total += count
+    }
+    for flag, count := range flags {
+        if float64(count)/float64(total) >= threshold {
+            result = append(result, flag)
+        }
+    }
+    return result
+}
+
+func getMostCommonPorts(ports map[int]int, limit int) []int {
+    type portCount struct {
+        port  int
+        count int
+    }
+    var counts []portCount
+    for port, count := range ports {
+        counts = append(counts, portCount{port, count})
+    }
+    sort.Slice(counts, func(i, j int) bool {
+        return counts[i].count > counts[j].count
+    })
+    var result []int
+    for i := 0; i < limit && i < len(counts); i++ {
+        result = append(result, counts[i].port)
+    }
+    return result
+}
+
+func calculateAverage(numbers []int) float64 {
+    if len(numbers) == 0 {
+        return 0
+    }
+    sum := 0
+    for _, n := range numbers {
+        sum += n
+    }
+    return float64(sum) / float64(len(numbers))
 }
 
 func getTerminalSize() (width, height int) {
@@ -209,25 +499,41 @@ func detectAttack(ipData *struct {
 
 func newTCPWatch() *TCPWatch {
     tw := &TCPWatch{
-        startTime:      time.Now(),
-        values:         make([]float64, 0, GRAPH_WIDTH),
-        minMbit:       math.MaxFloat64,
-        ramTotal:      2000,
-        isCapturing:   false,
+        startTime:        time.Now(),
+        values:          make([]float64, 0, GRAPH_WIDTH),
+        minMbit:         math.MaxFloat64,
+        ramTotal:        2000,
+        isCapturing:     false,
         currentPcapFile: "",
-        blockedIPs:    make(map[string]time.Time),
-        blacklistCount: 0,
-        attackingIPs: make(map[string]string),
+        blockedIPs:      make(map[string]time.Time),
+        blacklistCount:  0,
+        attackingIPs:    make(map[string]string),
         lastDisplayIndex: 0,
         whitelistedIPs: map[string]bool{
             "IP": true,
             "IP":  true,
-            "127.0.0.1":     true,  
-            "::1":           true,  
+            "127.0.0.1":     true,
+            "::1":           true,
         },
+        analyzer: &PatternAnalyzer{
+            patterns:   make(map[string]*AttackPattern),
+            sampleSize: 1000,
+            threshold:  100,
+            mu:          sync.RWMutex{},
+        },
+        bpfRules: make(map[string]string),
+        attackState: AttackState{
+            isOngoing:    false,
+            attackerIPs: make(map[string]bool),
+        },
+        lastAlertTime: time.Now(), 
     }
+
     tw.systemIP = tw.getServerIP()
     tw.updateSystemInfo()
+
+    go tw.startPacketAnalysis("eth0") 
+
     return tw
 }
 
