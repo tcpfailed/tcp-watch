@@ -60,7 +60,8 @@ sudo yum install libpcap-devel    # For CentOS/RHEL
 12. go mod tidy
 13. edit line "966 : return ipv4.String() + ":22" **and change :22 to the port you want to monitor**
 14. edit line "439 : handle, err := pcap.OpenLive("eth0", 1600, true, pcap.BlockForever)" **and replace eth0 with your interface**
-15. go run tcpwatch.go
+15. edit line "289 : cmd := exec.Command("tcpdump", "-i", "eth0", rule)" **and replace eth0 with your interface**
+16. go run tcpwatch.go
 
 🔧 Compiling
 
