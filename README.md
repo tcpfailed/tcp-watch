@@ -55,7 +55,7 @@ sudo yum install libpcap-devel    # For CentOS/RHEL
 6. apt install apache2 (optional if you want the web verison aswell)
 7. apt install npm
 8. npm init -y && npm install express ws
-9. git clone https://github.com/TCPTHEGOAT/tcp-watch/
+9. git clone https://github.com/tcpfailed/tcp-watch/
 10. cd tcp-watch
 11. go mod init tcpwatch
 12. go mod tidy
