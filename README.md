@@ -85,6 +85,7 @@ do step 5 & 6 & 7 and then do screen node index.js
     Web interface for monitoring
     Attack pattern recognition
     System performance analysis
+    BPF creation from attacks
 
 🌐 Web Interface
 
@@ -103,6 +104,7 @@ Default configuration provides:
     Automatic IP blocking
     60-second PCAP captures during attacks
     Whitelisted system IPs protection
+    Auto BPF creation
 
 📝 License
 
