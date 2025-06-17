@@ -1,3 +1,8 @@
+- **Change Log:**
+- Fixed flags that was not detecting
+- Fixed tcp dump error displaying in tcp-watch
+- Improved BPF creation and handling
+
 ![image](https://github.com/user-attachments/assets/8558b1ac-2f20-48d8-b2b8-469db8d09562)
 My first big project, cleaner repository. ENJOY
 # TCP Watch v1.0.1
