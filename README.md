@@ -25,7 +25,10 @@ A real-time network monitoring & DDoS protection tool written in Go, featuring l
   - Improved & cleaned up a good chunk of the code 
   - Improved cpu usage, resource consumption now being easier on startup for first time, when running
   - Improved and used better and newer code functions for all you geeks out there
-  - More math logic has been added to help calculate certain functions more accurately 
+  - More math logic has been added to help calculate certain functions more accurately
+  - Fixed over half the bugs
+  - Implemented a permanent and semi permanent logs, one for display via tcp-watch than proceeds to flush, just to allocate logs to. The other one is for permanent logs to view to help create filters, manual-bpf, patches
+  - Fixed static data and replaced with real server data. This static data was from the beta/test version of TCP-WATCH
 
 # 🧠 Help
 If you get an error **[./tcpwatch.go:552:13: duplicate key "IP" in map literal]** thats just due to you not putting your server ip in on line 571. You need to replace one of the "IP" literals with your ssh ip. This feature is so that tcp dump or any other protection measure doesn't accidentally blacklist your server ip and you should probably add yourself unless your adding ip tables, which this script does not interfer with ip tables just adds the malicious ips, ignores the ips you set in this field to your tables similar to an ip set.
