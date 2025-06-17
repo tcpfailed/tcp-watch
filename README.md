@@ -8,9 +8,9 @@ My first big project, cleaner repository. ENJOY
 A real-time network monitoring & DDoS protection tool written in Go, featuring live traffic analysis, attack detection, and system resource monitoring.
 
 - ## **Change Log:**
-- Fixed flags that was not detecting
-- Fixed tcp dump error displaying in tcp-watch
-- Improved BPF creation and handling
+  - Fixed flags that was not detecting
+  - Fixed tcp dump error displaying in tcp-watch
+  - Improved BPF creation and handling
 
 ## 🚀 Features
 
