@@ -28,9 +28,18 @@ A real-time network monitoring & DDoS protection tool written in Go, featuring l
   - More math logic has been added to help calculate certain functions more accurately 
 
 # 🧠 Help
-If you get an error **[./tcpwatch.go:552:13: duplicate key "IP" in map literal]** thats just due to you not putting your server ip in on line 552. You need to replace one of the "IP" literals with your ssh ip. This feature is so that tcp dump or any other protection measure doesn't accidentally blacklist your server ip and you should probably add yourself unless your adding ip tables, which this script does not interfer with ip tables just adds the malicious ips, ignores the ips you set in this field to your tables similar to an ip set
+If you get an error **[./tcpwatch.go:552:13: duplicate key "IP" in map literal]** thats just due to you not putting your server ip in on line 557. You need to replace one of the "IP" literals with your ssh ip. This feature is so that tcp dump or any other protection measure doesn't accidentally blacklist your server ip and you should probably add yourself unless your adding ip tables, which this script does not interfer with ip tables just adds the malicious ips, ignores the ips you set in this field to your tables similar to an ip set.
 
-![image](https://github.com/user-attachments/assets/28776212-8dd1-4a3a-b79e-a96a56c8619b)
+![image](https://github.com/user-attachments/assets/03efc316-0670-4085-801b-978c0a35f65e)
+
+# 🧠 LOGS
+The blacklistedips.txt is a simple temporary log file for displaying it to the user (you) its just something the logs can quickly allocate to & be ready quickly so it can list all ips in the attacking ips section and flush it when its done reading / displaying so its more stable. 
+![image](https://github.com/user-attachments/assets/3e482a15-9d7c-4bf2-8757-0ebe606b2f19)
+
+when running TCP-WATCH, the blacklistedips.log works same as the .txt version but the .log is meant to keep long-term logs on all ips that have attacked and their methods, src ports, dst ports, size, connections etc. Its everything you need to improve your server infastructure without ever flushing the ips! Examples below
+![image](https://github.com/user-attachments/assets/2cbb60de-0ade-4425-a8b5-fbcffe4417a0)
+
+![image](https://github.com/user-attachments/assets/b907c214-0176-4fa5-89aa-18e0d75a02a6)
 
 # 🚀 Features
 
