@@ -1,8 +1,3 @@
-- **Change Log:**
-- Fixed flags that was not detecting
-- Fixed tcp dump error displaying in tcp-watch
-- Improved BPF creation and handling
-
 ![image](https://github.com/user-attachments/assets/8558b1ac-2f20-48d8-b2b8-469db8d09562)
 My first big project, cleaner repository. ENJOY
 # TCP Watch v1.0.1
@@ -11,6 +6,11 @@ My first big project, cleaner repository. ENJOY
 ![Go Version](https://img.shields.io/badge/Go-1.20+-00ADD8)
 
 A real-time network monitoring & DDoS protection tool written in Go, featuring live traffic analysis, attack detection, and system resource monitoring.
+
+- ## **Change Log:**
+- Fixed flags that was not detecting
+- Fixed tcp dump error displaying in tcp-watch
+- Improved BPF creation and handling
 
 ## 🚀 Features
 
