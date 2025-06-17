@@ -28,7 +28,7 @@ A real-time network monitoring & DDoS protection tool written in Go, featuring l
   - More math logic has been added to help calculate certain functions more accurately 
 
 # 🧠 Help
-If you get an error [./tcpwatch.go:552:13: duplicate key "IP" in map literal] thats just due to you not putting your server ip in on line 552. You need to replace one of the "IP" literals with your ssh ip. This feature is so that tcp dump or any other protection measure doesn't accidentally blacklist your server ip and you should probably add yourself unless your adding ip tables, which this script does not interfer with ip tables just adds the ips to your tables similar to an ip set
+If you get an error **[./tcpwatch.go:552:13: duplicate key "IP" in map literal]** thats just due to you not putting your server ip in on line 552. You need to replace one of the "IP" literals with your ssh ip. This feature is so that tcp dump or any other protection measure doesn't accidentally blacklist your server ip and you should probably add yourself unless your adding ip tables, which this script does not interfer with ip tables just adds the ips to your tables similar to an ip set
 
 ![image](https://github.com/user-attachments/assets/28776212-8dd1-4a3a-b79e-a96a56c8619b)
 
