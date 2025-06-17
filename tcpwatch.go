@@ -1101,7 +1101,7 @@ func (tw *TCPWatch) display() {
     fmt.Printf("%s %-*s %s\n", 
         colorGray + boxVertical + colorWhite,
         boxWidth-4,
-        fmt.Sprintf("                                                                         Current PPS: %d",
+        fmt.Sprintf("https://github.com/tcpfailed/tcp-watch                                   Current PPS: %d",
             tw.packetsPerSec),
         colorGray + boxVertical)
         
