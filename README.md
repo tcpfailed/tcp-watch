@@ -189,8 +189,10 @@ See LICENSE for details.
 Contributions are welcome! Please feel free to submit a Pull Request.
 📞 Contact
 
-    Author: tcpfailed
+    Author:  tcpfailed
     Discord: tcprouting
+    Telegram: tcpfailed
+    Instagram: tcpfailed
 
 ⚠️ Disclaimer
 
