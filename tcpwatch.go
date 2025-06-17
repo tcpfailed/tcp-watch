@@ -16,6 +16,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+  "log"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -24,7 +25,7 @@ import (
 )
 
 const (
-	VERSION = "v1.0.1"
+	VERSION = "v1.0.2"
 
 	colorReset     = "\033[0m"
 	colorRed       = "\033[31m"
@@ -152,6 +153,49 @@ type TCPWatch struct {
 	attackState     AttackState
 	lastAlertTime   time.Time 
   interfaceName string
+  iface string
+}
+
+func showASCIILoadingScreen() {
+    asciiArt := `▄▄▄▄▄ ▄▄·  ▄▄▄·    ▄▄▌ ▐ ▄▌ ▄▄▄· ▄▄▄▄▄ ▄▄·  ▄ .▄    
+•██  ▐█ ▌▪▐█ ▄█    ██· █▌▐█▐█ ▀█ •██  ▐█ ▌▪██▪▐█    
+ ▐█.▪██ ▄▄ ██▀·    ██▪▐█▐▐▌▄█▀▀█  ▐█.▪██ ▄▄██▀▐█    
+ ▐█▌·▐███▌▐█▪·•    ▐█▌██▐█▌▐█ ▪▐▌ ▐█▌·▐███▌██▌▐▀    
+ ▀▀▀ ·▀▀▀ .▀        ▀▀▀▀ ▀▪ ▀  ▀  ▀▀▀ ·▀▀▀ ▀▀▀ ·    
+                                             
+Loading tcp-watch`
+
+    for _, char := range asciiArt {
+        fmt.Printf("%c", char)
+        time.Sleep(10 * time.Millisecond) 
+    }
+
+    for i := 0; i < 5; i++ {
+        fmt.Print(".")
+        time.Sleep(500 * time.Millisecond)
+    }
+    fmt.Println()
+
+    time.Sleep(1 * time.Second)
+
+    fmt.Print("\033[H\033[2J") 
+}
+
+func getDefaultInterface() (string, error) {
+showASCIILoadingScreen()
+    out, err := exec.Command("ip", "route", "show", "default").Output()
+    if err != nil {
+        return "", err
+    }
+
+    parts := strings.Fields(string(out))
+    for i, part := range parts {
+        if part == "dev" && i+1 < len(parts) {
+            return parts[i+1], nil
+        }
+    }
+
+    return "", fmt.Errorf("could not detect default interface")
 }
 
 func (tw *TCPWatch) startPacketAnalysis(interfaceName string) {
@@ -423,7 +467,7 @@ func setTerminalSize() {
 
     fmt.Printf("\x1b[8;65;204t")
     serverIP := getServerIP()
-    fmt.Printf("\033]0;Welcome To TCP Watch V1.0.1 (In Development!) {%s}\007", serverIP)
+    fmt.Printf("\033]0;Welcome To TCP Watch V1.0.2 (In Development!) {%s}\007", serverIP)
 }
 
 func parseHexIP(hexIP string) string {
@@ -484,20 +528,28 @@ func detectAttack(ipData *struct {
 }
 
 func newTCPWatch() *TCPWatch {
+    iface, err := getDefaultInterface()
+    if err != nil {
+        log.Fatalf("Failed to detect default interface: %v", err)
+    }
+
+    fmt.Printf("Detected default network interface: %s\n", iface)  
+
     tw := &TCPWatch{
         startTime:        time.Now(),
-        values:          make([]float64, 0, GRAPH_WIDTH),
-        minMbit:         math.MaxFloat64,
-        ramTotal:        2000,
-        isCapturing:     false,
-        currentPcapFile: "",
-        blockedIPs:      make(map[string]time.Time),
-        blacklistCount:  0,
-        attackingIPs:    make(map[string]string),
+        values:           make([]float64, 0, GRAPH_WIDTH),
+        minMbit:          math.MaxFloat64,
+        ramTotal:         2000,
+        isCapturing:      false,
+        currentPcapFile:  "",
+        blockedIPs:       make(map[string]time.Time),
+        blacklistCount:   0,
+        attackingIPs:     make(map[string]string),
         lastDisplayIndex: 0,
+        iface:            iface, 
         whitelistedIPs: map[string]bool{
             "IP": true,
-            "IP":  true,
+            "IP": true,
             "127.0.0.1":     true,
             "::1":           true,
         },
@@ -505,27 +557,27 @@ func newTCPWatch() *TCPWatch {
             patterns:   make(map[string]*AttackPattern),
             sampleSize: 1000,
             threshold:  100,
-            mu:          sync.RWMutex{},
+            mu:         sync.RWMutex{},
         },
         bpfRules: make(map[string]string),
         attackState: AttackState{
-            isOngoing:    false,
+            isOngoing:   false,
             attackerIPs: make(map[string]bool),
         },
-        lastAlertTime: time.Now(), 
+        lastAlertTime: time.Now(),
     }
 
     tw.systemIP = tw.getServerIP()
     tw.updateSystemInfo()
 
-    go tw.startPacketAnalysis("eth0") 
+    go tw.startPacketAnalysis(tw.iface)
 
     return tw
 }
 
 func (tw *TCPWatch) logBlacklistedIP(entry BlacklistEntry) {
     logFile := "blacklistedips.txt"
-    
+
     logEntry := fmt.Sprintf("[%s] IP: %s | Source Port: %s | Protocol: %s | Target Port: %s | Reason: %s\n",
         entry.Timestamp.Format("01-02-06 15:04:05"),
         entry.IP,
@@ -534,7 +586,7 @@ func (tw *TCPWatch) logBlacklistedIP(entry BlacklistEntry) {
         entry.TargetPort,
         entry.Reason)
 
-    f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    f, err := os.OpenFile(logFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
     if err != nil {
         return
     }
@@ -692,7 +744,7 @@ func (tw *TCPWatch) getServerIP() string {
 }
 
 func (tw *TCPWatch) updateNetworkStats() {
-    handle, err := pcap.OpenLive("eth0", 1600, true, pcap.BlockForever)
+    handle, err := pcap.OpenLive(tw.iface, 1600, true, pcap.BlockForever)
     if err != nil {
         return
     }
@@ -836,7 +888,7 @@ ProcessStats:
             if tw.incomingIPs > 100 {
                 reason = "high_ips"
             }
-            tw.currentPcapFile = startPacketCapture("eth0", reason)
+            tw.currentPcapFile = startPacketCapture(tw.iface, reason)
             time.Sleep(60 * time.Second)
             tw.isCapturing = false
             tw.currentPcapFile = "" 
@@ -1026,6 +1078,12 @@ func (tw *TCPWatch) display() {
         fmt.Sprintf("                                                                         Current PPS: %d",
             tw.packetsPerSec),
         colorGray + boxVertical)
+        
+fmt.Printf("%s %-*s %s\n", 
+    colorGray + boxVertical + colorWhite,
+    boxWidth-4,
+    fmt.Sprintf("                                                                         Current Interface: %s", tw.iface),
+    colorGray + boxVertical)
 
     fmt.Printf("%s %-*s %s\n", 
         colorGray + boxVertical + colorWhite,
@@ -1186,7 +1244,9 @@ fmt.Printf("%s %-*s %s\n",
         colorGray + boxVertical)
 
     var blockedEntries []string
-    if data, err := ioutil.ReadFile("blacklistedips.txt"); err == nil {
+
+    data, err := ioutil.ReadFile("blacklistedips.txt")
+    if err == nil {
         lines := strings.Split(string(data), "\n")
         for _, line := range lines {
             if line != "" {
@@ -1216,6 +1276,7 @@ fmt.Printf("%s %-*s %s\n",
     tw.lastDisplayIndex += 2
     if tw.lastDisplayIndex >= len(blockedEntries) {
         tw.lastDisplayIndex = 0
+        ioutil.WriteFile("blacklistedips.txt", []byte(""), 0644)
     }
 
     fmt.Printf("%s %-*s %s\n", 
