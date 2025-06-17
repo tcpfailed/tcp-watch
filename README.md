@@ -27,7 +27,7 @@ A real-time network monitoring & DDoS protection tool written in Go, featuring l
   - Improved and used better and newer code functions for all you geeks out there
   - More math logic has been added to help calculate certain functions more accurately
   - Fixed over half the bugs
-  - Implemented a permanent and semi permanent logs, one for a quick and easy display of attacking ips via tcp-watch than proceeds to flush, just to allocate logs to. The other one is for permanent logs to view to help create filters, manual-bpf, patches
+  - Implemented a permanent and semi permanent logs, one for a quick and easy display of attacking ips via tcp-watch that proceeds to flush, just mainly meant to allocate quick attack logs to. The other one is for permanent logs to view to help create filters, manual-bpf, patches
   - Fixed static data and replaced with real server data. This static data was from the beta/test version of TCP-WATCH
 
 # 🧠 Help
