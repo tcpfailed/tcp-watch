@@ -131,7 +131,6 @@ type TCPWatch struct {
 	cpuModel        string
 	cpuUsage        float64
 	ramUsed         int
-	ramTotal        int
 	ramFree         int
 	prevCPUTotal    float64
 	prevCPUIdle     float64
@@ -154,6 +153,27 @@ type TCPWatch struct {
 	lastAlertTime   time.Time 
   interfaceName string
   iface string
+  ramTotal int
+}
+
+func getTotalRAM() int {
+    data, err := ioutil.ReadFile("/proc/meminfo")
+    if err != nil {
+        return 0
+    }
+
+    for _, line := range strings.Split(string(data), "\n") {
+        if strings.HasPrefix(line, "MemTotal:") {
+            parts := strings.Fields(line)
+            if len(parts) >= 2 {
+                totalKB, err := strconv.Atoi(parts[1])
+                if err == nil {
+                    return totalKB / 1024 
+                }
+            }
+        }
+    }
+    return 0
 }
 
 func showASCIILoadingScreen() {
@@ -533,20 +553,20 @@ func newTCPWatch() *TCPWatch {
         log.Fatalf("Failed to detect default interface: %v", err)
     }
 
-    fmt.Printf("Detected default network interface: %s\n", iface)  
+    fmt.Printf("Detected default network interface: %s\n", iface)
 
     tw := &TCPWatch{
         startTime:        time.Now(),
         values:           make([]float64, 0, GRAPH_WIDTH),
         minMbit:          math.MaxFloat64,
-        ramTotal:         2000,
+        ramTotal:         getTotalRAM(), 
         isCapturing:      false,
         currentPcapFile:  "",
         blockedIPs:       make(map[string]time.Time),
         blacklistCount:   0,
         attackingIPs:     make(map[string]string),
         lastDisplayIndex: 0,
-        iface:            iface, 
+        iface:            iface,
         whitelistedIPs: map[string]bool{
             "IP": true,
             "IP": true,
@@ -576,7 +596,8 @@ func newTCPWatch() *TCPWatch {
 }
 
 func (tw *TCPWatch) logBlacklistedIP(entry BlacklistEntry) {
-    logFile := "blacklistedips.txt"
+    tempFile := "blacklistedips.txt"
+    logFile := "blacklistedips.log"
 
     logEntry := fmt.Sprintf("[%s] IP: %s | Source Port: %s | Protocol: %s | Target Port: %s | Reason: %s\n",
         entry.Timestamp.Format("01-02-06 15:04:05"),
@@ -586,13 +607,18 @@ func (tw *TCPWatch) logBlacklistedIP(entry BlacklistEntry) {
         entry.TargetPort,
         entry.Reason)
 
-    f, err := os.OpenFile(logFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-    if err != nil {
-        return
-    }
-    defer f.Close()
 
-    f.WriteString(logEntry)
+    f1, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err == nil {
+        f1.WriteString(logEntry)
+        f1.Close()
+    }
+
+    f2, err := os.OpenFile(tempFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+    if err == nil {
+        f2.WriteString(logEntry)
+        f2.Close()
+    }
 }
 
 func (tw *TCPWatch) blacklistIP(ip string, srcPort string, targetPort string, protocol string, reason string) error {
@@ -1276,8 +1302,11 @@ fmt.Printf("%s %-*s %s\n",
     tw.lastDisplayIndex += 2
     if tw.lastDisplayIndex >= len(blockedEntries) {
         tw.lastDisplayIndex = 0
-        ioutil.WriteFile("blacklistedips.txt", []byte(""), 0644)
+    err := os.WriteFile("blacklistedips.txt", []byte(""), 0644)
+    if err != nil {
+        fmt.Println("Failed to clear temporary IP list:", err)
     }
+}
 
     fmt.Printf("%s %-*s %s\n", 
         colorGray + boxVertical,
