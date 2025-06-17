@@ -63,7 +63,7 @@ sudo yum install libpcap-devel    # For CentOS/RHEL
 14. apt install tcpdump
 15. **edit line 1272** : return ipv4.String() + ":22 **and change :22 to the port you want to monitor**
 16. **edit line 709** : handle, err := pcap.OpenLive("eth0", 1600, true, pcap.BlockForever) **and replace eth0 with your interface**
-17. **edit line 513** : "IP": true, "IP":  true, **and replace the IP fields with the ips you dont want blocked or added to bpf. You can add more if needed**
+17. **edit line 513** : "IP": true, "IP":  true, **and replace the IP fields with the ips you dont want blocked or added to bpf. Add more if needed**
 18. **edit line 289** : cmd := exec.Command("tcpdump", "-i", "eth0", rule) **and replace eth0 with your interface**
 19. go run tcpwatch.go
 
