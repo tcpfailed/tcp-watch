@@ -51,8 +51,8 @@ function getSystemData() {
         const memUsed = memTotal - memFree;
 
         let blockedIPs = {};
-        if (fs.existsSync('blacklistedips.txt')) {
-            const blacklist = fs.readFileSync('blacklistedips.txt', 'utf8');
+        if (fs.existsSync('blacklistedips.log')) {
+            const blacklist = fs.readFileSync('blacklistedips.log', 'utf8');
             blacklist.split('\n').forEach(line => {
                 if (line.trim()) {
                     const match = line.match(/IP: ([\d.]+)/);
