@@ -1,18 +1,34 @@
-![image](https://github.com/user-attachments/assets/8558b1ac-2f20-48d8-b2b8-469db8d09562)
-My first big project, cleaner repository. ENJOY
-# TCP Watch v1.0.1
+![image](https://github.com/user-attachments/assets/2c06d2d7-0592-40b0-95db-dd6e0b621aa2)
+# TCP Watch v1.0.2
 ![License](https://img.shields.io/badge/license-Custom%20BSD-blue)
-![Version](https://img.shields.io/badge/version-1.0.1-green)
+![Version](https://img.shields.io/badge/version-1.0.2-green)
 ![Go Version](https://img.shields.io/badge/Go-1.20+-00ADD8)
 
 A real-time network monitoring & DDoS protection tool written in Go, featuring live traffic analysis, attack detection, and system resource monitoring.
 
-- ## **Change Log:**
+- ## Improvements
   - Fixed flags that was not detecting
   - Fixed tcp dump error displaying in tcp-watch
   - Improved BPF creation and handling
+  - Improved display on blacklisted ips. Now clears the ips being displayed on screen when it reaches the end of the list to read. 
+  - Automatically finds your default interface and utilizes it 
+  - Added small ascii loading animation
+  - More attack method detections
+  - Source ports coming from harmful ips are now more accurate and stable
+  - Added current interface to main ui
+  - Working on themes, possibly licenses (soon)
+  - Tcp dump, bpf work 2x as fast now at blocking traffic
+  - Fixed error messages while running when resources get exhausted, to help it not spam your terminal or bug the ui
+  - All ports should get detected now for traffic, this means no effort to edit default set port 22 inside the file, you can now leave default and still read traffic from other ports
+  - Slightly enhanced the graph, memory, traffic totals to be more stable
+  - Now requires no extra fields can just run it at default ttl for time of reloading on the script
+  - Improved & cleaned up a good chunk of the code 
+  - Improved cpu usage, resource consumption now being easier on startup for first time, when running
+  - Improved and used better and newer code functions for all you geeks out there
+  - More math logic has been added to help calculate certain functions more accurately 
 
-## 🚀 Features
+
+# 🚀 Features
 
 - **Real-time Network Monitoring**
   - Live packet analysis
@@ -26,6 +42,8 @@ A real-time network monitoring & DDoS protection tool written in Go, featuring l
   - Multiple attack pattern recognitions
   - Multiple types of ddos detection for robust detection
   - BPF creation system has been added
+  - Tcpdump
+  - Iptables
 
 - **System Monitoring**
   - CPU usage tracking
@@ -33,6 +51,7 @@ A real-time network monitoring & DDoS protection tool written in Go, featuring l
   - System resource analysis
   - Process monitoring
   - Traffic monitoring
+  - Traffic graph
 
 - **Web Interface**
   - Real-time traffic graphs
@@ -40,51 +59,82 @@ A real-time network monitoring & DDoS protection tool written in Go, featuring l
   - Blocked IP management
   - Attack logs visualization
 
-## 📋 Requirements
+# 📋 Requirements
 
 - Golang 1.20 or higher
 - libpcap-dev
-- Root privileges (for packet capture)
+- Sudo privileges (pcap)
 
-# Install dependencies
-sudo apt-get install libpcap-dev  # For Debian/Ubuntu
-sudo yum install libpcap-devel    # For CentOS/RHEL
 
-🔧 Installation
+## 1. Update packages
+sudo apt-get update             
+sudo yum update -y               
+## or: sudo dnf update -y         
 
-1. apt-get update
-2. apt install screen
-3. apt install golang-go
-4. apt install git
-5. apt install libpcap-dev
-6. apt install apache2 (optional if you want the web verison aswell)
-7. apt install npm
-8. npm init -y && npm install express ws
-9. git clone https://github.com/tcpfailed/tcp-watch/
-10. cd tcp-watch
-11. go mod init tcpwatch
-12. go mod tidy
-13. apt install iptables-persistent
-14. apt install tcpdump
-15. **edit line 686** : return ipv4.String() + ":22 **and change :22 to the port you want to monitor**
-16. **edit line 695** : handle, err := pcap.OpenLive("eth0", 1600, true, pcap.BlockForever) **and replace eth0 with your interface**
-17. **edit line 499** : "IP": true, "IP":  true, **and replace the IP fields with the ips you dont want blocked or added to bpf. Add more if needed**
-18. **edit line 162** : cmd := exec.Command("tcpdump", "-i", "eth0", rule) **and replace eth0 with your interface**
-19. go run tcpwatch.go
+## 2. Install screen
+sudo apt install screen          
+sudo yum install screen         
 
-🔧 Compiling
+## 3. Install Go
+sudo apt install golang-go       
+sudo yum install golang          
+
+## 4. Install git
+sudo apt install git             
+sudo yum install git             
+
+## 5. Install libpcap
+sudo apt install libpcap-dev     
+sudo yum install libpcap-devel   
+
+## 6. Install apache
+sudo apt install apache2         
+sudo yum install httpd         
+
+## 7. Install node & npm
+sudo apt install npm            
+sudo yum install nodejs          
+
+## 8. Initialize node packages
+npm init -y && npm install express ws
+
+## 9. Clone the repository
+git clone https://github.com/tcpfailed/tcp-watch/
+
+## 10. Install iptables persistent/save service
+sudo apt install iptables-persistent       
+sudo yum install iptables-services        
+sudo service iptables save                
+
+## 11. Install tcpdump
+sudo apt install tcpdump                   
+sudo yum install tcpdump                   
+
+## 12. CD into the project directory
+cd tcp-watch
+
+## 13. Initialize Go
+go mod init tcpwatch
+
+## 14. Fetch Go dependencies
+go mod tidy
+
+## 15. Run the Go program
+go run tcpwatch.go
+
+# 🔧 Compiling **(Optional)**
 
 go build tcpwatch.go
 
-# Basic usage
+## Basic usage
 go run tcpwatch.go (non built)
 ./tcpwatch.go (built)
 
-# Web usage
+## Web usage
 do step 5 & 6 & 7 and then do screen node index.js
 
 
-🎯 Key Features
+# 🎯 Key Features
 
     Live traffic monitoring
     Automatic DDoS protection
@@ -95,16 +145,14 @@ do step 5 & 6 & 7 and then do screen node index.js
     System performance analysis
     BPF creation from attacks
 
-🌐 Web Interface
-
-Access the web interface at http://your-server-ip:3000 for:
+# 🌐 Web Interface
 
     Real-time traffic graphs
     System statistics
     Blocked IP management
     Attack logs
 
-⚙️ Configuration
+# ⚙️ Configuration
 
 Default configuration provides:
 
@@ -114,7 +162,7 @@ Default configuration provides:
     Whitelisted system IPs protection
     Auto BPF creation
 
-📝 License
+# 📝 License
 
 Copyright (c) 2025 tcpfailed. All rights reserved.
 Custom BSD License with Commercial Use Restriction.
@@ -130,3 +178,5 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ⚠️ Disclaimer
 
 This tool is for network monitoring and protection purposes only. Users are responsible for compliance with local laws and regulations.
+<img width="316" alt="Screenshot 2025-06-17 030746" src="https://github.com/user-attachments/assets/032827fa-4d53-4e2b-b059-8483f266762d" />
+
