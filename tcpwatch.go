@@ -151,15 +151,18 @@ type TCPWatch struct {
 	bpfRules        map[string]string
 	attackState     AttackState
 	lastAlertTime   time.Time 
+  interfaceName string
 }
 
 func (tw *TCPWatch) startPacketAnalysis(interfaceName string) {
+	tw.interfaceName = interfaceName 
+
 	go func() {
 		for {
 			cmd := exec.Command("tcpdump", "-i", interfaceName, "-n", "-v", "-c", "1000")
 			output, err := cmd.Output()
 			if err != nil {
-				fmt.Printf("%v\n", err)
+				fmt.Printf("tcpdump error: %v\n", err)
 				time.Sleep(time.Second)
 				continue
 			}
@@ -237,56 +240,43 @@ func (tw *TCPWatch) analyzePackets(output string) {
 }
 
 
-func (tw *TCPWatch) generateBPFRule(pattern *AttackPattern) string {
-    parts := strings.Split(pattern.Pattern, ",")
-    if len(parts) < 6 {
-        return "" 
-    }
+func (tw *TCPWatch) generateBPFRule(p *AttackPattern) string {
+	var ruleParts []string
 
-    var ruleParts []string
+	protocol := getMostCommon(p.Protocols)
+	if protocol != "" {
+		ruleParts = append(ruleParts, protocol)
+	}
 
-    
-    ipPart := strings.Split(parts[0], "=")[1]
-    if ipPart != "" && ipPart != "unknown" {
-        ruleParts = append(ruleParts, fmt.Sprintf("host %s", ipPart))
-    }
+	commonPorts := getMostCommonPorts(p.Ports, 2)
+	for _, port := range commonPorts {
+		ruleParts = append(ruleParts, fmt.Sprintf("port %d", port))
+	}
 
-    
-    protocolPart := strings.Split(parts[1], "=")[1]
-    if protocolPart != "" {
-        ruleParts = append(ruleParts, protocolPart)
-    }
+	flags := getMostCommonFlags(p.Flags)
+	for _, flag := range flags {
+		switch flag {
+		case "SYN":
+			ruleParts = append(ruleParts, "tcp[tcpflags] & tcp-syn != 0")
+		case "ACK":
+			ruleParts = append(ruleParts, "tcp[tcpflags] & tcp-ack != 0")
+		case "FIN":
+			ruleParts = append(ruleParts, "tcp[tcpflags] & tcp-fin != 0")
+		}
+	}
 
-    
-    if protocolPart == "TCP" || protocolPart == "UDP" {
-        srcPortPart := strings.Split(parts[2], "=")[1]
-        dstPortPart := strings.Split(parts[3], "=")[1]
-        flagsPart := strings.Split(parts[4], "=")[1]
+	avgSize := calculateAverage(p.PacketSizes)
+	if avgSize > 0 {
+		ruleParts = append(ruleParts, fmt.Sprintf("greater %d", int(avgSize)))
+	}
 
-        if srcPortPart != "" && srcPortPart != "unknown" {
-            ruleParts = append(ruleParts, fmt.Sprintf("src port %s", srcPortPart))
-        }
-        if dstPortPart != "" && dstPortPart != "unknown" {
-            ruleParts = append(ruleParts, fmt.Sprintf("dst port %s", dstPortPart))
-        }
-        if flagsPart != "" {
-            ruleParts = append(ruleParts, fmt.Sprintf("tcp[tcpflags] & (%s) != 0", flagsPart))
-        }
-    }
-
-    
-    lengthPart := strings.Split(parts[5], "=")[1]
-    if lengthPart != "" && lengthPart != "0" {
-        ruleParts = append(ruleParts, fmt.Sprintf("len >= %s", lengthPart))
-    }
-
-    return strings.Join(ruleParts, " and ")
+	return strings.Join(ruleParts, " and ")
 }
 
 
 func (tw *TCPWatch) applyBPFRule(rule string) {
     
-    cmd := exec.Command("tcpdump", "-i", "eth0", rule)
+	cmd := exec.Command("tcpdump", "-i", tw.interfaceName, rule)
     if err := cmd.Start(); err != nil {
         fmt.Printf("%v\n", err)
         return
@@ -296,10 +286,6 @@ func (tw *TCPWatch) applyBPFRule(rule string) {
 
     
     fmt.Printf("\n%s\n", rule)
-}
-
-func extractPattern(line string) string {
-    return ""
 }
 
 func extractProtocol(line string) string {
