@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	VERSION = "v1.0.2"
+	VERSION = "v1.0.1"
 
 	colorReset     = "\033[0m"
 	colorRed       = "\033[31m"
