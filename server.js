@@ -5,11 +5,24 @@ const WebSocket = require('ws');
 const fs = require('fs');
 const os = require('os');
 
+const DEBUG = false;
 const wss = new WebSocket.Server({ server: http });
 
 let prevCPU = null;
 let prevNet = null;
 let prevTime = Date.now();
+
+function getServerIp() {
+    const interfaces = os.networkInterfaces();
+    for (let name of Object.keys(interfaces)) {
+        for (let iface of interfaces[name]) {
+            if (iface.family === 'IPv4' && !iface.internal) {
+                return iface.address;
+            }
+        }
+    }
+    return 'localhost';
+}
 
 function getSystemData() {
     try {
@@ -84,6 +97,14 @@ function getSystemData() {
 }
 
 app.get('/', (req, res) => {
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
+    if (DEBUG) {
+        console.log('Client IP: ${clientIp}');
+    } else {
+        console.log(`Client Connected`)
+    }
+
     res.send(`
 <!DOCTYPE html>
 <html>
@@ -276,21 +297,54 @@ app.get('/', (req, res) => {
     `);
 });
 
-wss.on('connection', (ws) => {
-    console.log('Client connected');
-    
+wss.on('connection', (ws, req) => {
+    const ip = req.socket.remoteAddress.replace(/^.*:/, '');
+    const clientPort = req.socket.remotePort;
+    const serverPort = req.socket.localPort;
+
+    const socket = ws._socket;
+    const startBytesRead = socket.bytesRead;
+    const startBytesWritten = socket.bytesWritten;
+
+    console.log(`Client Connected From: ${ip}, Source Port: ${clientPort}, Destination Port: ${serverPort}`);
+
+    let lastBytesRead = startBytesRead;
+    let lastBytesWritten = startBytesWritten;
+
     const interval = setInterval(() => {
-        const data = getSystemData();
-        ws.send(JSON.stringify(data));
+    const data = getSystemData();
+
+    const beforeWrite = socket.bytesWritten;
+    ws.send(JSON.stringify(data), () => {
+    const afterWrite = socket.bytesWritten;
+    const deltaWritten = afterWrite - beforeWrite;
+    lastBytesWritten = afterWrite;
+    console.log(`Sent ${deltaWritten} bytes to ${ip}:${clientPort} (Total sent: ${afterWrite - startBytesWritten} bytes)`);
+        });
+
+    const currentBytesRead = socket.bytesRead;
+    const deltaRead = currentBytesRead - lastBytesRead;
+    lastBytesRead = currentBytesRead;
+    console.log(`Received ${deltaRead} bytes from ${ip}:${clientPort} (Total received: ${currentBytesRead - startBytesRead} bytes)`);
     }, 1000);
 
+    ws.on('message', (message) => {
+    const size = Buffer.byteLength(message);
+    console.log(`Message from ${ip}:${clientPort} (${size} bytes)`);
+    });
+
     ws.on('close', () => {
-        clearInterval(interval);
-        console.log('Client disconnected');
+    clearInterval(interval);
+    const totalRead = socket.bytesRead - startBytesRead;
+    const totalWritten = socket.bytesWritten - startBytesWritten;
+    console.log(`Client Disconnected From: ${ip}, Source Port: ${clientPort}, Destination Port: ${serverPort}`);
+    console.log(`Total received: ${totalRead} bytes, Total sent: ${totalWritten} bytes`);
     });
 });
-
 const PORT = 1234;
+const serverIp = getServerIp();
+
 http.listen(PORT, () => {
-    console.log(`TCP Watch Web Version running on http://localhost:${PORT}`);
+    console.log(`Web Client Connected`);
+    console.log(`TCP Watch Web is running at http://${serverIp}:${PORT}`);
 });
