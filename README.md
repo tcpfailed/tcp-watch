@@ -36,6 +36,11 @@ A real-time network monitoring & DDoS protection tool written in Go, featuring l
   - Fixed attack logs not being fully accurate most of the time unknown or the same reasoning now its completely accurate to what the ip was blocked for and its dst, src ports
   - Added to where old and new pcaps get deleted/flushed due to it already being logged in logs to make the script more efficent
   - Added -t timeout options between 30-300ms core components like proc net wont update and are set hard coded for 300 ms
+  - Updated webserver
+
+# 📋 API HELP
+You need to use the /data endpoint if you plan to run this on a dstat server ![image](https://github.com/user-attachments/assets/f7452a87-348b-4f4e-a400-13310a0b75e1)
+
 
 # 🧠 Help
 If you get an error **[./tcpwatch.go:552:13: duplicate key "IP" in map literal]** thats just due to you not putting your server ip in on line 571. You need to replace one of the "IP" literals with your ssh ip. This feature is so that tcp dump or any other protection measure doesn't accidentally blacklist your server ip and you should probably add yourself unless your adding ip tables, which this script does not interfer with ip tables just adds the malicious ips, ignores the ips you set in this field to your tables similar to an ip set.
