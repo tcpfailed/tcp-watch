@@ -29,8 +29,9 @@ A real-time network monitoring & DDoS protection tool written in Go, featuring l
   - Fixed over half the bugs
   - Implemented permanent and semi permanent logs, one for a quick and easy display of attacking ips via tcp-watch that proceeds to flush, just mainly meant to allocate quick attack logs to. The other one is for permanent logs to view to help create filters, manual-bpf, attack & malicious traffic patches
   - Fixed static data and replaced with real server data. This static data was from the beta/test version of TCP-WATCH
-  - Planning to add automatic malicious ip reporting for ips that are logged and it automatically uses their asn to find their providers abuse email to be more efficient at getting attacks servers banned, unless they are bulletproof of course
-  - Improved & implemented web server logs 
+  - Added a auto-smart bpf creator that runs in the background
+  - Improved & implemented web server logs
+  - Added a auto abuse db script that runs in the background and reports all ips in blacklist.log to abuse db **REQUIRES A ABUSE DB API KEY**
 
 # 🧠 Help
 If you get an error **[./tcpwatch.go:552:13: duplicate key "IP" in map literal]** thats just due to you not putting your server ip in on line 571. You need to replace one of the "IP" literals with your ssh ip. This feature is so that tcp dump or any other protection measure doesn't accidentally blacklist your server ip and you should probably add yourself unless your adding ip tables, which this script does not interfer with ip tables just adds the malicious ips, ignores the ips you set in this field to your tables similar to an ip set.
@@ -48,6 +49,18 @@ When running TCP-WATCH, the blacklistedips.log works same as the .txt version bu
 
 Web logs when running TCP-WATCH webserver are advanced shows the ips, their source port they are connecting from and the destination port they are sending traffic/connecting to. Also shows the bytes sent and receieved
 ![image](https://github.com/user-attachments/assets/5ba4c8b9-65cb-4a12-a845-25fe6c50b5c9)
+
+Automatic IP reporting of attacking ips are now implemented. To make this feature work please edit line 51 of **"abusedb.go"** to put your api key in it
+![image](https://github.com/user-attachments/assets/a7c5056c-699f-4a5e-83c5-6d4b635a9ed4)
+
+# ABUSE DATABASE AUTOMATIC REPORTING API HELP.
+> **FIRST CREATE AN ACCOUNT AND LOGIN** ![image](https://github.com/user-attachments/assets/1a2fef5f-2acf-4b3f-bf59-b78bd3da1d0a)
+
+> **SECOND OFF PRESS ON YOUR USERNAME AND PRESS ACCOUNT** ![image](https://github.com/user-attachments/assets/55649841-61ed-46b4-a70a-ce40ac0f9383)
+
+> **FINALLY NAVIGATE TO THE API SECTION AND CREATE A FREE API KEY AND GO TO "abusedb.go" and apply your api key on line 51** ![image](https://github.com/user-attachments/assets/8b78d069-2811-4154-bfc0-4da2560a41a7)
+
+
 
 # 🚀 Features
 
