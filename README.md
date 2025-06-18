@@ -163,10 +163,16 @@ cd tcp-watch
 ## 13. Initialize Go
 go mod init tcpwatch
 
-## 14. Fetch Go dependencies
+## 14. Install CPULimit
+sudo apt install cpulimit
+
+## 15. Install Net-Tools
+sudo apt install net-tools 
+
+## 16. Fetch Go dependencies
 go mod tidy
 
-## 15. Run the Go program
+## 17. Run the Go program
 go run tcpwatch.go
 
 # 🔧 Compiling **(Optional)**
@@ -178,7 +184,7 @@ go run tcpwatch.go (non built)
 ./tcpwatch.go (built)
 
 ## Web usage
-do step 5 & 6 & 7 and then do screen node index.js
+do step 5 & 6 & 7 and then do screen node server.js
 
 
 # 🎯 Key Features
