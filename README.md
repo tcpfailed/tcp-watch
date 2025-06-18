@@ -39,7 +39,7 @@ A real-time network monitoring & DDoS protection tool written in Go, featuring l
   - Updated webserver
 
 # 📋 API HELP
-You need to use the /data endpoint if you plan to run this on a dstat server ![image](https://github.com/user-attachments/assets/f7452a87-348b-4f4e-a400-13310a0b75e1)
+You need to use the /data endpoint if you plan to run this on a dstat server but if you dont plan to than you can enjoy the dashboard with statistics and a live chart  ![image](https://github.com/user-attachments/assets/f7452a87-348b-4f4e-a400-13310a0b75e1) 
 
 
 # 🧠 Help
