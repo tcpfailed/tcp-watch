@@ -43,9 +43,10 @@ You need to use the /data endpoint if you plan to run this on a dstat server but
 
 
 # 🧠 Help
-If you get an error **[./tcpwatch.go:715:13: duplicate key "IP" in map literal]** thats just due to you not putting your server ip in on line 715. You need to replace one of the "IP" literals with your ssh ip. This feature is so that tcp dump or any other protection measure doesn't accidentally blacklist your server ip and you should probably add yourself unless your adding ip tables, which this script does not interfer with ip tables just adds the malicious ips, ignores the ips you set in this field to your tables similar to an ip set.
+If you get an error **[./tcpwatch.go:694:13: duplicate key "IP" in map literal]** thats just due to you not putting your server ip in on line 694. You need to replace one of the "IP" literals with your ssh ip. This feature is so that tcp dump or any other protection measure doesn't accidentally blacklist your server ip and you should probably add yourself unless your adding ip tables, which this script does not interfer with ip tables just adds the malicious ips, ignores the ips you set in this field to your tables similar to an ip set.
 
-![image](https://github.com/user-attachments/assets/03efc316-0670-4085-801b-978c0a35f65e)
+![image](https://github.com/user-attachments/assets/4f133771-7dc2-4d5f-9e15-253bf0e481a1)
+
 
 # 🧠 LOGS
 The blacklistedips.txt is a simple temporary log file for displaying it to the user (you) its just something the logs can quickly allocate to & be ready quickly so it can list all ips in the attacking ips section and flush it when its done reading / displaying so its more stable. 
