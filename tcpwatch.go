@@ -1602,7 +1602,7 @@ func main() {
 
     cpulimitCmd := exec.Command("cpulimit",
         "-p", fmt.Sprintf("%d", pid),
-        "-l", "20",
+        "-l", "45",
     )
     cpulimitCmd.Stdout = os.Stdout
     cpulimitCmd.Stderr = os.Stderr
