@@ -20,6 +20,9 @@ import (
 	"syscall"
 	"time"
   "flag"
+  "bytes"
+	"encoding/json"
+	"net/http"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -74,7 +77,7 @@ const (
 type Blocker struct {
 	blockedIPS map[string]int
 	mu sync.Mutex
-	blockedThreshold int
+	blockThreshold int
 }
 
 type AttackPattern struct {
@@ -166,6 +169,27 @@ type TCPWatch struct {
   handle *pcap.Handle
 }
 
+func (tw *TCPWatch) sendWebStats() {
+    data := map[string]interface{}{
+        "pps":  tw.packetsPerSec,
+        "mbps": tw.currentMbit,
+    }
+    b, err := json.Marshal(data)
+    if err != nil {
+        fmt.Println("Error encoding web stats:", err)
+        return
+    }
+
+    go func() {
+        resp, err := http.Post("http://51.222.196.59:1234/updateStats", "application/json", bytes.NewReader(b))
+        if err != nil {
+            fmt.Println("Error sending web stats:", err)
+            return
+        }
+        resp.Body.Close()
+    }()
+}
+
 func (tw *TCPWatch) stopPacketCapture() {
 	if tw.handle != nil {
 		tw.handle.Close()
@@ -200,7 +224,7 @@ func cleanupOldPcaps() {
 func NewBlocker(threshold int) *Blocker {
 	return &Blocker{
 		blockedIPS: make(map[string]int),
-		blockedThreshold: threshold,
+		blockThreshold: threshold,
 
 	}
 }
@@ -1149,12 +1173,12 @@ func (tw *TCPWatch) updateIncomingIPs() {
 				remoteHex := fields[2]
 				localHex := fields[1]
 
-srcIP, srcPort := parseHexIPEnhanced(remoteHex)
-dstIP, dstPort := parseHexIPEnhanced(localHex)
+				srcIP, srcPort := parseHexIPAndPort(remoteHex)
+				dstIP, dstPort := parseHexIPAndPort(localHex)
 
-if srcIP == "" || dstPort == "" {
-	continue
-}
+				if srcIP == "" || dstPort == "" {
+					continue
+				}
 
 				key := fmt.Sprintf("%s:%s->%s:%s/%s", srcIP, srcPort, dstIP, dstPort, file.protocol)
 				connectionCounts[key]++
@@ -1581,113 +1605,145 @@ func getServerIP() string {
 }
     
 func main() {
-    var intervalMS int
-    flag.IntVar(&intervalMS, "t", 0, "Required: Update interval in milliseconds (minimum 50ms)")
-    flag.Parse()
+	var intervalMS int
+	flag.IntVar(&intervalMS, "t", 0, "Required: Update interval in milliseconds (minimum 50ms)")
+	flag.Parse()
 
-    if intervalMS == 0 {
-        fmt.Println("Error: -t flag is required. Example: -t 1000")
-        flag.Usage()
-        os.Exit(1)
-    }
+	if intervalMS == 0 {
+		fmt.Println("Error: -t flag is required. Example: -t 1000")
+		flag.Usage()
+		os.Exit(1)
+	}
 
-    if intervalMS < 50 {
-        fmt.Println("Minimum allowed interval is 50ms. Using 50ms.")
-        intervalMS = 50
-    }
+	if intervalMS < 50 {
+		fmt.Println("Minimum allowed interval is 50ms. Using 50ms.")
+		intervalMS = 50
+	}
 
-    pid := os.Getpid()
-    cores := runtime.NumCPU()
-    fmt.Printf("Detected %d CPU cores, applying cpulimit...\n", cores)
+	abuseDBSession := "abusedb_session"
+	bpfSession := "bpf_session"
 
-    cpulimitCmd := exec.Command("cpulimit",
-        "-p", fmt.Sprintf("%d", pid),
-        "-l", "45",
-    )
-    cpulimitCmd.Stdout = os.Stdout
-    cpulimitCmd.Stderr = os.Stderr
+	if err := runScreenSession(abuseDBSession, "abusedb.go"); err != nil {
+		fmt.Println("Failed to start abusedb.go:", err)
+	} else {
+		fmt.Println("abusedb.go running in screen session:", abuseDBSession)
+	}
 
-    if err := cpulimitCmd.Start(); err != nil {
-        fmt.Printf("Failed to start cpulimit: %v\n", err)
-    } else {
-        fmt.Println("cpulimit started successfully")
-    }
+	if err := runScreenSession(bpfSession, "bpfmaker.go"); err != nil {
+		fmt.Println("Failed to start bpfmaker.go:", err)
+	} else {
+		fmt.Println("bpfmaker.go running in screen session:", bpfSession)
+	}
 
-    defer func() {
-        if cpulimitCmd.Process != nil {
-            fmt.Println("Stopping cpulimit...")
-            cpulimitCmd.Process.Kill()
-            cpulimitCmd.Wait()
-            fmt.Println("cpulimit stopped.")
-        }
-    }()
+	setTerminalSize()
+	tw := newTCPWatch()
 
-    abuseDBSession := "abusedb_session"
-    bpfSession := "bpf_session"
+	ifaceName, err := getDefaultInterface()
+	if err != nil {
+		fmt.Println("Could not detect network interface:", err)
+		os.Exit(1)
+	}
 
-    if err := runScreenSession(abuseDBSession, "abusedb.go"); err != nil {
-        fmt.Println("Failed to start abusedb.go:", err)
-    } else {
-        fmt.Println("abusedb.go running in screen session:", abuseDBSession)
-    }
+	handle, err := pcap.OpenLive(ifaceName, 1600, true, pcap.BlockForever)
+	if err != nil {
+		fmt.Println("Error opening pcap handle:", err)
+		os.Exit(1)
+	}
+	defer handle.Close()
 
-    if err := runScreenSession(bpfSession, "bpfmaker.go"); err != nil {
-        fmt.Println("Failed to start bpfmaker.go:", err)
-    } else {
-        fmt.Println("bpfmaker.go running in screen session:", bpfSession)
-    }
+	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
+	blocker := NewBlocker(20)
+	suspiciousCounts := make(map[string]int)
+	suspiciousTicker := time.NewTicker(30 * time.Second)
+	defer suspiciousTicker.Stop()
 
-    setTerminalSize()
-    tw := newTCPWatch()
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
-    sigChan := make(chan os.Signal, 1)
-    signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	fmt.Print("\033[?25l")
+	defer fmt.Print("\033[?25h")
 
-    fmt.Print("\033[?25l")
-    defer fmt.Print("\033[?25h")
+	ticker := time.NewTicker(time.Duration(intervalMS) * time.Millisecond)
+	defer ticker.Stop()
 
-    ticker := time.NewTicker(time.Duration(intervalMS) * time.Millisecond)
-    defer ticker.Stop()
+	iteration := 0
 
-    iteration := 0
+	for {
+		select {
+		case <-sigChan:
+			fmt.Print("\033[?25h")
+			fmt.Print("\033[2J")
+			fmt.Print("\033[H")
+			fmt.Println("\nStopping background screen sessions...")
 
-    for {
-        select {
-        case <-sigChan:
-            fmt.Print("\033[?25h")
-            fmt.Print("\033[2J")
-            fmt.Print("\033[H")
+			if err := killScreenSession(abuseDBSession); err != nil {
+				fmt.Println("Error stopping abusedb screen session:", err)
+			} else {
+				fmt.Println("Stopped abusedb screen session.")
+			}
 
-            fmt.Println("\nStopping background screen sessions...")
+			if err := killScreenSession(bpfSession); err != nil {
+				fmt.Println("Error stopping bpf screen session:", err)
+			} else {
+				fmt.Println("Stopped bpf screen session.")
+			}
 
-            if err := killScreenSession(abuseDBSession); err != nil {
-                fmt.Println("Error stopping abusedb screen session:", err)
-            } else {
-                fmt.Println("Stopped abusedb screen session.")
-            }
+			fmt.Println("Shutdown complete.")
+			return
 
-            if err := killScreenSession(bpfSession); err != nil {
-                fmt.Println("Error stopping bpf screen session:", err)
-            } else {
-                fmt.Println("Stopped bpf screen session.")
-            }
+		case packet := <-packetSource.Packets():
+			ipLayer := packet.Layer(layers.LayerTypeIPv4)
+			if ipLayer == nil {
+				ipLayer = packet.Layer(layers.LayerTypeIPv6)
+			}
+			if ipLayer == nil {
+				continue
+			}
 
-            fmt.Println("Shutdown complete.")
-            return
+			var srcIP string
+			switch ip := ipLayer.(type) {
+			case *layers.IPv4:
+				srcIP = ip.SrcIP.String()
+			case *layers.IPv6:
+				srcIP = ip.SrcIP.String()
+			}
 
-        case <-ticker.C:
-            tw.updateSystemInfo()
-            tw.updateNetworkStats()
+			if tcpLayer := packet.Layer(layers.LayerTypeTCP); tcpLayer != nil {
+				tcp := tcpLayer.(*layers.TCP)
+				if tcp.SYN && !tcp.ACK {
+					suspiciousCounts[srcIP]++
+				} else if tcp.RST {
+					suspiciousCounts[srcIP]++
+				} else if tcp.FIN {
+					suspiciousCounts[srcIP]++
+				}
+			}
 
-            if iteration%(600/intervalMS) == 0 {
-                tw.updateIncomingIPs()
-            }
+			if udpLayer := packet.Layer(layers.LayerTypeUDP); udpLayer != nil {
+				suspiciousCounts[srcIP]++
+			}
 
-            tw.updateSystemStats()
-            tw.display()
-            tw.updateSystemStats()
+			if suspiciousCounts[srcIP] > blocker.blockThreshold {
+				blocker.BlockIP(srcIP, "Too many suspicious packets")
+				suspiciousCounts[srcIP] = 0
+			}
 
-            iteration++
-        }
-    }
+		case <-suspiciousTicker.C:
+			suspiciousCounts = make(map[string]int)
+
+		case <-ticker.C:
+			tw.updateSystemInfo()
+			tw.updateNetworkStats()
+
+			if iteration%(600/intervalMS) == 0 {
+				tw.updateIncomingIPs()
+			}
+
+			tw.updateSystemStats()
+			tw.display()
+			tw.updateSystemStats()
+
+			iteration++
+		}
+	}
 }
