@@ -526,7 +526,7 @@ func setTerminalSize() {
 
     fmt.Printf("\x1b[8;65;204t")
     serverIP := getServerIP()
-    fmt.Printf("\033]0;Welcome To TCP Watch V1.0.2 (In Development!) {%s}\007", serverIP)
+    fmt.Printf("\033]0;Welcome To TCP Watch V1.0.2 (In Development!) {%d}\007", serverIP)
 }
 
 func parseHexIP(hexIP string) string {
@@ -800,7 +800,7 @@ func (tw *TCPWatch) getServerIP() string {
 		for _, addr := range addrs {
 			if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
 				if ipv4 := ipnet.IP.To4(); ipv4 != nil {
-					return ipv4.String() + ":22"
+					return ipv4.String()
 				}
 			}
 		}
