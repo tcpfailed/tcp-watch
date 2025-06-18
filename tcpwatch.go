@@ -526,7 +526,7 @@ func setTerminalSize() {
 
     fmt.Printf("\x1b[8;65;204t")
     serverIP := getServerIP()
-    fmt.Printf("\033]0;Welcome To TCP Watch V1.0.2 (In Development!) {%d}\007", serverIP)
+    fmt.Printf("\033]0;Welcome To TCP Watch V1.0.2 (In Development!) {%s}\007", serverIP)
 }
 
 func parseHexIP(hexIP string) string {
@@ -662,13 +662,21 @@ func (tw *TCPWatch) logBlacklistedIP(entry BlacklistEntry) {
 
 func (tw *TCPWatch) blacklistIP(ip string, srcPort string, targetPort string, protocol string, reason string) error {
     if tw.whitelistedIPs[ip] {
-        return nil 
+        return nil
     }
     if _, exists := tw.blockedIPs[ip]; exists {
         return nil
     }
-    ipAddr := strings.Split(ip, ":")[0]
-    cmd := exec.Command("iptables", "-A", "INPUT", "-s", ipAddr, "-j", "DROP")
+
+    ipAddr := strings.Split(ip, "%")[0]
+
+    var cmd *exec.Cmd
+    if strings.Contains(ipAddr, ":") {
+        cmd = exec.Command("ip6tables", "-A", "INPUT", "-s", ipAddr, "-j", "DROP")
+    } else {
+        cmd = exec.Command("iptables", "-A", "INPUT", "-s", ipAddr, "-j", "DROP")
+    }
+
     err := cmd.Run()
     if err != nil {
         return err
@@ -684,7 +692,6 @@ func (tw *TCPWatch) blacklistIP(ip string, srcPort string, targetPort string, pr
     }
 
     tw.logBlacklistedIP(entry)
-
     tw.blockedIPs[ip] = entry.Timestamp
     tw.blacklistCount++
     return nil
@@ -995,32 +1002,77 @@ ProcessStats:
 }
 
 func (tw *TCPWatch) updateIncomingIPs() {
-    data, err := ioutil.ReadFile("/proc/net/tcp")
-    if err == nil {
-        lines := strings.Split(string(data), "\n")
-        ips := make(map[string]int) 
-        
-        for _, line := range lines[1:] {
-            fields := strings.Fields(line)
-            if len(fields) > 2 {
-                remoteAddr := fields[2]
-                ip := parseHexIP(remoteAddr)
-                if ip != "" {
-                    ips[ip]++
-                    
-                    
-                    if ips[ip] > 10 { 
-                        tw.blacklistIP(ip,
-                            "unknown", 
-                            "unknown", 
-                            "TCP",     
-                            fmt.Sprintf("Too many connections: %d", ips[ip]))
-                    }
-                }
-            }
-        }
-        tw.incomingIPs = len(ips)
-    }
+	ipCounts := make(map[string]int)
+
+	files := []struct {
+		path   string
+		isIPv6 bool
+	}{
+		{"/proc/net/tcp", false},
+		{"/proc/net/tcp6", true},
+	}
+
+	for _, file := range files {
+		data, err := ioutil.ReadFile(file.path)
+		if err != nil {
+			continue
+		}
+
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines[1:] {
+			fields := strings.Fields(line)
+			if len(fields) > 2 {
+				remoteAddr := fields[2]
+				ip := parseHexIPEnhanced(remoteAddr, file.isIPv6)
+				if ip != "" && ip != "127.0.0.1" && ip != "::1" {
+					ipCounts[ip]++
+
+					if ipCounts[ip] > 10 {
+						tw.blacklistIP(ip,
+							"unknown",
+							"unknown",
+							"TCP",
+							fmt.Sprintf("Too many connections: %d", ipCounts[ip]),
+						)
+					}
+				}
+			}
+		}
+	}
+
+	tw.incomingIPs = len(ipCounts)
+}
+
+func parseHexIPEnhanced(remoteAddr string, isIPv6 bool) string {
+	parts := strings.Split(remoteAddr, ":")
+	if len(parts) != 2 {
+		return ""
+	}
+	ipHex := parts[0]
+	
+	if isIPv6 {
+		if len(ipHex) != 32 {
+			return ""
+		}
+		ip := make(net.IP, 16)
+		for i := 0; i < 16; i++ {
+			b, err := strconv.ParseUint(ipHex[(15-i)*2:(15-i)*2+2], 16, 8)
+			if err != nil {
+				return ""
+			}
+			ip[i] = byte(b)
+		}
+		return ip.String()
+	} else {
+		if len(ipHex) != 8 {
+			return "" 
+		}
+		b1, _ := strconv.ParseUint(ipHex[6:8], 16, 8)
+		b2, _ := strconv.ParseUint(ipHex[4:6], 16, 8)
+		b3, _ := strconv.ParseUint(ipHex[2:4], 16, 8)
+		b4, _ := strconv.ParseUint(ipHex[0:2], 16, 8)
+		return fmt.Sprintf("%d.%d.%d.%d", b1, b2, b3, b4)
+	}
 }
 
 func (tw *TCPWatch) drawTrafficGraph() string {
@@ -1390,7 +1442,7 @@ func getServerIP() string {
         for _, addr := range addrs {
             if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
                 if ipv4 := ipnet.IP.To4(); ipv4 != nil {
-                    return ipv4.String() + ":22"
+                    return ipv4.String() 
                 }
             }
         }
