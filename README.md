@@ -57,9 +57,6 @@ When running TCP-WATCH, the blacklistedips.log works same as the .txt version bu
 
 ![image](https://github.com/user-attachments/assets/b907c214-0176-4fa5-89aa-18e0d75a02a6)
 
-Web logs when running TCP-WATCH webserver are advanced shows the ips, their source port they are connecting from and the destination port they are sending traffic/connecting to. Also shows the bytes sent and receieved
-![image](https://github.com/user-attachments/assets/5ba4c8b9-65cb-4a12-a845-25fe6c50b5c9)
-
 Automatic IP reporting of attacking ips are now implemented. To make this feature work please edit line 51 of **"abusedb.go"** to put your api key in it
 ![image](https://github.com/user-attachments/assets/a7c5056c-699f-4a5e-83c5-6d4b635a9ed4)
 
