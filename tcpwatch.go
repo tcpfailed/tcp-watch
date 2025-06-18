@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
   "log"
+  "encoding/hex"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -67,6 +68,12 @@ const (
 	ATTACK_UDP  = "UDP Flood"
 	ATTACK_ICMP = "ICMP Flood"
 )
+
+type Blocker struct {
+	blockedIPS map[string]int
+	mu sync.Mutex
+	blockedThreshold int
+}
 
 type AttackPattern struct {
 	Pattern     string
@@ -155,6 +162,44 @@ type TCPWatch struct {
   iface string
   ramTotal int
 }
+func NewBlocker(threshold int) *Blocker {
+	return &Blocker{
+		blockedIPS: make(map[string]int),
+		blockedThreshold: threshold,
+
+	}
+}
+func normalizeIPv6(ip string) string {
+    ip = strings.ReplaceAll(ip, "0000", "0")
+    return strings.Trim(ip, ":")
+}
+
+
+func (b *Blocker) BlockIP(ip string, reason string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.blockedIPS[ip] > 0 {
+		return
+	}
+	var cmd *exec.Cmd
+	if isIPv6(ip) {
+		cmd = exec.Command("ip6tables", "-A", "INPUT", "-s", ip, "-j", "DROP")
+	} else {
+		cmd = exec.Command("iptables", "-A", "INPUT", "-s", ip, "-j", "DROP")
+	}
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("Failed to block IP %s: %v\n", ip, err)
+		return
+	}
+	b.blockedIPS[ip] = 1
+	log.Printf("Blocked Ip: %s for reason: %s\n", ip, reason)
+}
+
+func isIPv6(ip string) bool {
+	return net.ParseIP(ip) != nil && net.ParseIP(ip).To4() == nil
+}
+
 func runScreenSession(sessionName, goFile string) error {
     cmd := exec.Command("screen", "-dmS", sessionName, "go", "run", goFile)
     return cmd.Start()
@@ -1000,17 +1045,60 @@ ProcessStats:
 
     tw.totalGBytes += float64(totalBytes) / (1024 * 1024 * 1024)
 }
+func parseHexIPAndPort(hexAddr string) (string, string) {
+	parts := strings.Split(hexAddr, ":")
+	if len(parts) != 2 {
+		return "", ""
+	}
+
+	ipHex := parts[0]
+	portHex := parts[1]
+
+	portInt, err := strconv.ParseInt(portHex, 16, 32)
+	if err != nil {
+		return "", ""
+	}
+	port := strconv.Itoa(int(portInt))
+
+	if len(ipHex) == 8 {
+		b, err := hex.DecodeString(ipHex)
+		if err != nil || len(b) != 4 {
+			return "", port
+		}
+		return net.IPv4(b[3], b[2], b[1], b[0]).String(), port
+	}
+
+	if len(ipHex) == 32 {
+		b, err := hex.DecodeString(ipHex)
+		if err != nil || len(b) != 16 {
+			return "", port
+		}
+		ip := net.IP(b)
+		return ip.String(), port
+	}
+
+	return "", port
+}
+
 
 func (tw *TCPWatch) updateIncomingIPs() {
-	ipCounts := make(map[string]int)
-
 	files := []struct {
-		path   string
-		isIPv6 bool
+		path     string
+		protocol string
 	}{
-		{"/proc/net/tcp", false},
-		{"/proc/net/tcp6", true},
+		{"/proc/net/tcp", "TCP"},
+		{"/proc/net/tcp6", "TCP"},
+		{"/proc/net/udp", "UDP"},
+		{"/proc/net/udp6", "UDP"},
+		{"/proc/net/raw", "RAW"},
+		{"/proc/net/raw6", "RAW"},
+		{"/proc/net/icmp", "ICMP"},
+		{"/proc/net/icmp6", "ICMP"},
+		{"/proc/net/gre", "GRE"},
+		{"/proc/net/gre6", "GRE"},
 	}
+
+	connectionCounts := make(map[string]int)
 
 	for _, file := range files {
 		data, err := ioutil.ReadFile(file.path)
@@ -1022,57 +1110,63 @@ func (tw *TCPWatch) updateIncomingIPs() {
 		for _, line := range lines[1:] {
 			fields := strings.Fields(line)
 			if len(fields) > 2 {
-				remoteAddr := fields[2]
-				ip := parseHexIPEnhanced(remoteAddr, file.isIPv6)
-				if ip != "" && ip != "127.0.0.1" && ip != "::1" {
-					ipCounts[ip]++
+				remoteHex := fields[2]
+				localHex := fields[1]
 
-					if ipCounts[ip] > 10 {
-						tw.blacklistIP(ip,
-							"unknown",
-							"unknown",
-							"TCP",
-							fmt.Sprintf("Too many connections: %d", ipCounts[ip]),
-						)
-					}
+srcIP, srcPort := parseHexIPEnhanced(remoteHex)
+dstIP, dstPort := parseHexIPEnhanced(localHex)
+
+if srcIP == "" || dstPort == "" {
+	continue
+}
+
+				key := fmt.Sprintf("%s:%s->%s:%s/%s", srcIP, srcPort, dstIP, dstPort, file.protocol)
+				connectionCounts[key]++
+
+				if connectionCounts[key] > 10 {
+					reason := fmt.Sprintf("Too many %s connections: %d", file.protocol, connectionCounts[key])
+					_ = tw.blacklistIP(srcIP, srcPort, dstPort, file.protocol, reason)
 				}
 			}
 		}
 	}
 
-	tw.incomingIPs = len(ipCounts)
+	tw.incomingIPs = len(connectionCounts)
 }
 
-func parseHexIPEnhanced(remoteAddr string, isIPv6 bool) string {
+func parseHexIPEnhanced(remoteAddr string) (string, string) {
 	parts := strings.Split(remoteAddr, ":")
 	if len(parts) != 2 {
-		return ""
+		return "", ""
 	}
+
 	ipHex := parts[0]
-	
-	if isIPv6 {
-		if len(ipHex) != 32 {
-			return ""
-		}
-		ip := make(net.IP, 16)
-		for i := 0; i < 16; i++ {
-			b, err := strconv.ParseUint(ipHex[(15-i)*2:(15-i)*2+2], 16, 8)
-			if err != nil {
-				return ""
-			}
-			ip[i] = byte(b)
-		}
-		return ip.String()
-	} else {
-		if len(ipHex) != 8 {
-			return "" 
-		}
-		b1, _ := strconv.ParseUint(ipHex[6:8], 16, 8)
-		b2, _ := strconv.ParseUint(ipHex[4:6], 16, 8)
-		b3, _ := strconv.ParseUint(ipHex[2:4], 16, 8)
-		b4, _ := strconv.ParseUint(ipHex[0:2], 16, 8)
-		return fmt.Sprintf("%d.%d.%d.%d", b1, b2, b3, b4)
+	portHex := parts[1]
+
+	portInt, err := strconv.ParseInt(portHex, 16, 32)
+	if err != nil {
+		return "", ""
 	}
+	port := fmt.Sprintf("%d", portInt)
+
+	if len(ipHex) == 8 { 
+		b, err := hex.DecodeString(ipHex)
+		if err != nil || len(b) != 4 {
+			return "", port
+		}
+		
+		ip := fmt.Sprintf("%d.%d.%d.%d", b[3], b[2], b[1], b[0])
+		return ip, port
+	} else if len(ipHex) == 32 { 
+		b, err := hex.DecodeString(ipHex)
+		if err != nil || len(b) != 16 {
+			return "", port
+		}
+		ip := net.IP(b)
+		return ip.String(), port
+	}
+
+	return "", port
 }
 
 func (tw *TCPWatch) drawTrafficGraph() string {
@@ -1451,11 +1545,6 @@ func getServerIP() string {
 }
     
 func main() {
-    if os.Geteuid() != 0 {
-        fmt.Println("This program must be run as root (sudo)")
-        os.Exit(1)
-    }
-
     abuseDBSession := "abusedb_session"
     bpfSession := "bpf_session"
 
@@ -1466,7 +1555,7 @@ func main() {
     }
 
     if err := runScreenSession(bpfSession, "bpfmaker.go"); err != nil {
-        fmt.Println("Failed to start bpf.go:", err)
+        fmt.Println("Failed to start bpfmaker.go:", err)
     } else {
         fmt.Println("bpfmaker.go running in screen session:", bpfSession)
     }
@@ -1506,12 +1595,13 @@ func main() {
 
             fmt.Println("Shutdown complete.")
             return
+
         case <-ticker.C:
             tw.updateSystemInfo()
             tw.updateNetworkStats()
             tw.updateIncomingIPs()
             tw.display()
-            tw.updateSystemStats()
+            tw.updateSystemStats() 
         }
-    }
-}
+    } 
+} 
