@@ -1647,7 +1647,7 @@ func main() {
             tw.updateSystemInfo()
             tw.updateNetworkStats()
 
-            if iteration%(300/intervalMS) == 0 {
+            if iteration%(600/intervalMS) == 0 {
                 tw.updateIncomingIPs()
             }
 
