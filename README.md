@@ -43,7 +43,7 @@ You need to use the /data endpoint if you plan to run this on a dstat server but
 
 
 # 🧠 Help
-If you get an error **[./tcpwatch.go:552:13: duplicate key "IP" in map literal]** thats just due to you not putting your server ip in on line 571. You need to replace one of the "IP" literals with your ssh ip. This feature is so that tcp dump or any other protection measure doesn't accidentally blacklist your server ip and you should probably add yourself unless your adding ip tables, which this script does not interfer with ip tables just adds the malicious ips, ignores the ips you set in this field to your tables similar to an ip set.
+If you get an error **[./tcpwatch.go:715:13: duplicate key "IP" in map literal]** thats just due to you not putting your server ip in on line 715. You need to replace one of the "IP" literals with your ssh ip. This feature is so that tcp dump or any other protection measure doesn't accidentally blacklist your server ip and you should probably add yourself unless your adding ip tables, which this script does not interfer with ip tables just adds the malicious ips, ignores the ips you set in this field to your tables similar to an ip set.
 
 ![image](https://github.com/user-attachments/assets/03efc316-0670-4085-801b-978c0a35f65e)
 
