@@ -118,12 +118,10 @@ type AttackState struct {
 }
 
 type BlacklistEntry struct {
-	IP          string
-	SourcePort  string
-	Protocol    string
-	TargetPort  string
-	Reason      string
-	Timestamp   time.Time
+    IP         string
+    SourcePort string
+    TargetPort string
+    Timestamp  time.Time
 }
 
 type TCPWatch struct {
@@ -722,13 +720,11 @@ func (tw *TCPWatch) logBlacklistedIP(entry BlacklistEntry) {
     tempFile := "blacklistedips.txt"
     logFile := "blacklistedips.log"
 
-    logEntry := fmt.Sprintf("[%s] IP: %s | Source Port: %s | Protocol: %s | Target Port: %s | Reason: %s\n",
-        entry.Timestamp.Format("01-02-06 15:04:05"),
-        entry.IP,
-        entry.SourcePort,
-        entry.Protocol,
-        entry.TargetPort,
-        entry.Reason)
+logEntry := fmt.Sprintf("[%s] Blocked IP: %s | Source Port: %s | Target Port: %s\n",
+    entry.Timestamp.Format("01-02-06 15:04:05"),
+    entry.IP,
+    entry.SourcePort,
+    entry.TargetPort)
 
 
     f1, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -767,12 +763,18 @@ func (tw *TCPWatch) blacklistIP(ip string, srcPort, targetPort, protocol, reason
 		return fmt.Errorf("ip block cmd failed: %w", err)
 	}
 
-	entry := BlacklistEntry{IP: ipAddr, SourcePort: srcPort, TargetPort: targetPort, Protocol: protocol, Reason: reason, Timestamp: time.Now()}
-	tw.logBlacklistedIP(entry)
+entry := BlacklistEntry{
+    IP:         ipAddr,
+    SourcePort: srcPort,
+    TargetPort: targetPort,
+    Timestamp:  time.Now(),
+}
 
-	tw.blockedIPs[ipAddr] = entry.Timestamp
-	tw.blacklistCount++
-	return nil
+tw.logBlacklistedIP(entry)
+
+tw.blockedIPs[ipAddr] = entry.Timestamp
+tw.blacklistCount++
+return nil
 }
 
 
