@@ -19,6 +19,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+  "flag"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -1580,6 +1581,15 @@ func getServerIP() string {
 }
     
 func main() {
+    var intervalMS int
+    flag.IntVar(&intervalMS, "t", 1000, "Update interval in milliseconds")
+    flag.Parse()
+
+    if intervalMS < 50 {
+        fmt.Println("Minimum allowed interval is 50ms. Using 50ms.")
+        intervalMS = 50
+    }
+
     abuseDBSession := "abusedb_session"
     bpfSession := "bpf_session"
 
@@ -1604,8 +1614,10 @@ func main() {
     fmt.Print("\033[?25l") 
     defer fmt.Print("\033[?25h") 
 
-    ticker := time.NewTicker(2 * time.Second)
+    ticker := time.NewTicker(time.Duration(intervalMS) * time.Millisecond)
     defer ticker.Stop()
+
+    iteration := 0
 
     for {
         select {
@@ -1634,9 +1646,15 @@ func main() {
         case <-ticker.C:
             tw.updateSystemInfo()
             tw.updateNetworkStats()
-            tw.updateIncomingIPs()
-            tw.display()
+
+            if iteration%(300/intervalMS) == 0 {
+                tw.updateIncomingIPs()
+            }
+
             tw.updateSystemStats()
+            tw.display()
+
+            iteration++
         }
-    } 
-} 
+    }
+}
