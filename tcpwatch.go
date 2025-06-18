@@ -155,6 +155,45 @@ type TCPWatch struct {
   iface string
   ramTotal int
 }
+func runScreenSession(sessionName, goFile string) error {
+    cmd := exec.Command("screen", "-dmS", sessionName, "go", "run", goFile)
+    return cmd.Start()
+}
+
+func killScreenSession(sessionName string) error {
+    cmd := exec.Command("pkill", "-f", fmt.Sprintf("SCREEN.*%s", sessionName))
+    return cmd.Run()
+}
+
+func runAbuseDBInBackground() error {
+    screenSession := "abusedb_session"
+
+    cmd := exec.Command("screen", screenSession, "go", "run", "abusedb.go")
+
+    err := cmd.Start()
+    if err != nil {
+        return fmt.Errorf("failed to start abusedb.go in screen: %w", err)
+    }
+
+    fmt.Printf("abusedb started in background with screen session: %s (PID: %d)\n", screenSession, cmd.Process.Pid)
+
+    return nil
+}
+
+func runBPFInBackground() error {
+    screenSession := "bpf_session"
+
+    cmd := exec.Command("screen", "-dmS", screenSession, "go", "run", "bpfmaker.go")
+
+    err := cmd.Start()
+    if err != nil {
+        return fmt.Errorf("failed to start bpfmaker.go in screen: %w", err)
+    }
+
+    fmt.Printf("bpfmaker.go started in background with screen session: %s (PID: %d)\n", screenSession, cmd.Process.Pid)
+
+    return nil
+}
 
 func getTotalRAM() int {
     data, err := ioutil.ReadFile("/proc/meminfo")
@@ -1329,11 +1368,17 @@ fmt.Printf("%s %-*s %s\n",
         boxBottomRight,
         colorReset)
 }
+
 func getServerIP() string {
     ifaces, err := net.Interfaces()
     if err != nil {
         return "unknown"
     }
+    
+    if err := runBPFInBackground(); err != nil {
+        fmt.Println("Error running bpf:", err)
+    }
+    
     for _, iface := range ifaces {
         if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
             continue
@@ -1354,37 +1399,67 @@ func getServerIP() string {
 }
     
 func main() {
-
-  if os.Geteuid() != 0 {
+    if os.Geteuid() != 0 {
         fmt.Println("This program must be run as root (sudo)")
         os.Exit(1)
     }
 
+    abuseDBSession := "abusedb_session"
+    bpfSession := "bpf_session"
+
+    if err := runScreenSession(abuseDBSession, "abusedb.go"); err != nil {
+        fmt.Println("Failed to start abusedb.go:", err)
+    } else {
+        fmt.Println("abusedb.go running in screen session:", abuseDBSession)
+    }
+
+    if err := runScreenSession(bpfSession, "bpfmaker.go"); err != nil {
+        fmt.Println("Failed to start bpf.go:", err)
+    } else {
+        fmt.Println("bpfmaker.go running in screen session:", bpfSession)
+    }
+
     setTerminalSize()
-	tw := newTCPWatch()
+    tw := newTCPWatch()
 
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+    sigChan := make(chan os.Signal, 1)
+    signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
-	fmt.Print("\033[?25l")
-	defer fmt.Print("\033[?25h")
+    fmt.Print("\033[?25l") 
+    defer fmt.Print("\033[?25h") 
 
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
+    ticker := time.NewTicker(2 * time.Second)
+    defer ticker.Stop()
 
-	for {
-		select {
-		case <-sigChan:
-			fmt.Print("\033[?25h") 
-			fmt.Print("\033[2J")   
-			fmt.Print("\033[H")    
-			return
-		case <-ticker.C:
-			tw.updateSystemInfo()
-			tw.updateNetworkStats()
-			tw.updateIncomingIPs()
-			tw.display()
-      tw.updateSystemStats()
-		}
-	}
+    for {
+        select {
+        case <-sigChan:
+            fmt.Print("\033[?25h")
+            fmt.Print("\033[2J")
+            fmt.Print("\033[H")
+
+            fmt.Println("\nStopping background screen sessions...")
+
+            if err := killScreenSession(abuseDBSession); err != nil {
+                fmt.Println("Error stopping abusedb screen session:", err)
+            } else {
+                fmt.Println("Stopped abusedb screen session.")
+            }
+
+            if err := killScreenSession(bpfSession); err != nil {
+                fmt.Println("Error stopping bpf screen session:", err)
+            } else {
+                fmt.Println("Stopped bpf screen session.")
+            }
+
+            fmt.Println("Shutdown complete.")
+            return
+        case <-ticker.C:
+            tw.updateSystemInfo()
+            tw.updateNetworkStats()
+            tw.updateIncomingIPs()
+            tw.display()
+            tw.updateSystemStats()
+        }
+    }
 }
