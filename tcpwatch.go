@@ -166,6 +166,8 @@ type TCPWatch struct {
   ramTotal int
   handle *pcap.Handle
 }
+
+
 func (tw *TCPWatch) stopPacketCapture() {
 	if tw.handle != nil {
 		tw.handle.Close()
@@ -232,7 +234,8 @@ func (b *Blocker) BlockIP(ip string, reason string) {
 }
 
 func isIPv6(ip string) bool {
-	return net.ParseIP(ip) != nil && net.ParseIP(ip).To4() == nil
+	parsed := net.ParseIP(strings.Split(ip, "%")[0])
+	return parsed != nil && parsed.To4() == nil
 }
 
 func runScreenSession(sessionName, goFile string) error {
@@ -688,8 +691,8 @@ func newTCPWatch() *TCPWatch {
         lastDisplayIndex: 0,
         iface:            iface,
         whitelistedIPs: map[string]bool{
-            "": true,
-            "": true,
+            "IP": true,
+            "IP": true,
             "127.0.0.1":     true,
             "::1":           true,
         },
@@ -741,41 +744,35 @@ func (tw *TCPWatch) logBlacklistedIP(entry BlacklistEntry) {
     }
 }
 
-func (tw *TCPWatch) blacklistIP(ip string, srcPort string, targetPort string, protocol string, reason string) error {
-    if tw.whitelistedIPs[ip] {
-        return nil
-    }
-    if _, exists := tw.blockedIPs[ip]; exists {
-        return nil
-    }
+func (tw *TCPWatch) blacklistIP(ip string, srcPort, targetPort, protocol, reason string) error {
+	if tw.whitelistedIPs[ip] {
+		return nil
+	}
+	if _, exists := tw.blockedIPs[ip]; exists {
+		return nil
+	}
 
-    ipAddr := strings.Split(ip, "%")[0]
+	ipAddr := strings.Split(ip, "%")[0]
+	isV6 := isIPv6(ipAddr)
 
-    var cmd *exec.Cmd
-    if strings.Contains(ipAddr, ":") {
-        cmd = exec.Command("ip6tables", "-A", "INPUT", "-s", ipAddr, "-j", "DROP")
-    } else {
-        cmd = exec.Command("iptables", "-A", "INPUT", "-s", ipAddr, "-j", "DROP")
-    }
+	cmd := exec.Command(
+		func() string {
+			if isV6 { return "ip6tables" }
+			return "iptables"
+		}(),
+		"-A", "INPUT", "-s", ipAddr, "-j", "DROP",
+	)
 
-    err := cmd.Run()
-    if err != nil {
-        return err
-    }
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("ip block cmd failed: %w", err)
+	}
 
-    entry := BlacklistEntry{
-        IP:          ip,
-        SourcePort:  srcPort,
-        Protocol:    protocol,
-        TargetPort:  targetPort,
-        Reason:      reason,
-        Timestamp:   time.Now(),
-    }
+	entry := BlacklistEntry{IP: ipAddr, SourcePort: srcPort, TargetPort: targetPort, Protocol: protocol, Reason: reason, Timestamp: time.Now()}
+	tw.logBlacklistedIP(entry)
 
-    tw.logBlacklistedIP(entry)
-    tw.blockedIPs[ip] = entry.Timestamp
-    tw.blacklistCount++
-    return nil
+	tw.blockedIPs[ipAddr] = entry.Timestamp
+	tw.blacklistCount++
+	return nil
 }
 
 
