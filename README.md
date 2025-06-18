@@ -33,6 +33,7 @@ A real-time network monitoring & DDoS protection tool written in Go, featuring l
   - Improved & implemented web server logs
   - Added a auto abuse db script that runs in the background and reports all ips in blacklist.log to abuse db **REQUIRES A ABUSE DB API KEY**
   - Added ipv6 support and tracking across all ports rather than a specific one for more detailed and robust banning, traffic detection
+  - Fixed attack logs not being fully accurate most of the time unknown or the same reasoning now its completely accurate to what the ip was blocked for and its dst, src ports
 
 # 🧠 Help
 If you get an error **[./tcpwatch.go:552:13: duplicate key "IP" in map literal]** thats just due to you not putting your server ip in on line 571. You need to replace one of the "IP" literals with your ssh ip. This feature is so that tcp dump or any other protection measure doesn't accidentally blacklist your server ip and you should probably add yourself unless your adding ip tables, which this script does not interfer with ip tables just adds the malicious ips, ignores the ips you set in this field to your tables similar to an ip set.
