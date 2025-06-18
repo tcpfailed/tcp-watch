@@ -2,13 +2,16 @@ package main
 
 import (
 	"bufio"
+	"encoding/hex"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"math"
 	"net"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -16,8 +19,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-  "log"
-  "encoding/hex"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -161,7 +162,40 @@ type TCPWatch struct {
   interfaceName string
   iface string
   ramTotal int
+  handle *pcap.Handle
 }
+
+func (tw *TCPWatch) stopPacketCapture() {
+	if tw.handle != nil {
+		tw.handle.Close()
+		tw.handle = nil
+	}
+
+	tw.isCapturing = false
+
+	if tw.currentPcapFile != "" {
+		err := os.Remove(tw.currentPcapFile)
+		if err != nil {
+			fmt.Printf("Failed to delete pcap file: %v\n", err)
+		} else {
+			fmt.Printf("Deleted pcap file: %s\n", tw.currentPcapFile)
+		}
+		tw.currentPcapFile = ""
+	}
+}
+
+func cleanupOldPcaps() {
+	files, err := filepath.Glob("*.pcap")
+	if err != nil {
+		fmt.Printf("Failed to find past pcap files: %v\n", err)
+		return
+	}
+
+	for _, f := range files {
+		os.Remove(f)
+	}
+}
+
 func NewBlocker(threshold int) *Blocker {
 	return &Blocker{
 		blockedIPS: make(map[string]int),
@@ -632,6 +666,7 @@ func detectAttack(ipData *struct {
 }
 
 func newTCPWatch() *TCPWatch {
+	cleanupOldPcaps()
     iface, err := getDefaultInterface()
     if err != nil {
         log.Fatalf("Failed to detect default interface: %v", err)
@@ -1601,7 +1636,7 @@ func main() {
             tw.updateNetworkStats()
             tw.updateIncomingIPs()
             tw.display()
-            tw.updateSystemStats() 
+            tw.updateSystemStats()
         }
     } 
 } 
