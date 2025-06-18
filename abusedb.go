@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	apiKey := "f61b40b42407c8ea32f4ad7f5742b79405c803677810d96c55da70d3e357537bd80a79ba14ef2cce"
+	apiKey := "ABUSE_DB_API_KEY_HERE"
 
 	file, err := os.Open("blacklistedips.log")
 	if err != nil {
