@@ -1596,6 +1596,32 @@ func main() {
         intervalMS = 50
     }
 
+    pid := os.Getpid()
+    cores := runtime.NumCPU()
+    fmt.Printf("Detected %d CPU cores, applying cpulimit...\n", cores)
+
+    cpulimitCmd := exec.Command("cpulimit",
+        "-p", fmt.Sprintf("%d", pid),
+        "-l", "20",
+    )
+    cpulimitCmd.Stdout = os.Stdout
+    cpulimitCmd.Stderr = os.Stderr
+
+    if err := cpulimitCmd.Start(); err != nil {
+        fmt.Printf("Failed to start cpulimit: %v\n", err)
+    } else {
+        fmt.Println("cpulimit started successfully")
+    }
+
+    defer func() {
+        if cpulimitCmd.Process != nil {
+            fmt.Println("Stopping cpulimit...")
+            cpulimitCmd.Process.Kill()
+            cpulimitCmd.Wait()
+            fmt.Println("cpulimit stopped.")
+        }
+    }()
+
     abuseDBSession := "abusedb_session"
     bpfSession := "bpf_session"
 
@@ -1617,8 +1643,8 @@ func main() {
     sigChan := make(chan os.Signal, 1)
     signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
-    fmt.Print("\033[?25l") 
-    defer fmt.Print("\033[?25h") 
+    fmt.Print("\033[?25l")
+    defer fmt.Print("\033[?25h")
 
     ticker := time.NewTicker(time.Duration(intervalMS) * time.Millisecond)
     defer ticker.Stop()
@@ -1659,6 +1685,7 @@ func main() {
 
             tw.updateSystemStats()
             tw.display()
+            tw.updateSystemStats()
 
             iteration++
         }
