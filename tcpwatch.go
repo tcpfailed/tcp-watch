@@ -1582,8 +1582,14 @@ func getServerIP() string {
     
 func main() {
     var intervalMS int
-    flag.IntVar(&intervalMS, "t", 1000, "Update interval in milliseconds")
+    flag.IntVar(&intervalMS, "t", 0, "Required: Update interval in milliseconds (minimum 50ms)")
     flag.Parse()
+
+    if intervalMS == 0 {
+        fmt.Println("Error: -t flag is required. Example: -t 1000")
+        flag.Usage()
+        os.Exit(1)
+    }
 
     if intervalMS < 50 {
         fmt.Println("Minimum allowed interval is 50ms. Using 50ms.")
