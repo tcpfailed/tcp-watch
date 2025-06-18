@@ -61,8 +61,7 @@ Automatic IP reporting of attacking ips are now implemented. To make this featur
 If your encountering the error below, thats due to you setting your timeout any higher than 600ms or any timeout lower than 50ms
 ![image](https://github.com/user-attachments/assets/cebbaf50-a926-4afd-b57d-9ff14a5144b2)
 
-But if you stay between 50-600ms this will not happen and should load as usual ![image](https://github.com/user-attachments/assets/7ca4e23c-3912-4617-adc3-fc27d50bcf69)
-
+But if you stay between 50-600ms this will not happen and should load as usual as seen below ![image](https://github.com/user-attachments/assets/7ca4e23c-3912-4617-adc3-fc27d50bcf69)
 
 # ABUSE DATABASE AUTOMATIC REPORTING API HELP.
 > **FIRST CREATE AN ACCOUNT AND LOGIN** ![image](https://github.com/user-attachments/assets/1a2fef5f-2acf-4b3f-bf59-b78bd3da1d0a)
