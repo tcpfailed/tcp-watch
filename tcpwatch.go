@@ -228,7 +228,6 @@ func (b *Blocker) BlockIP(ip string, reason string) {
 		return
 	}
 	b.blockedIPS[ip] = 1
-	log.Printf("Blocked Ip: %s for reason: %s\n", ip, reason)
 }
 
 func isIPv6(ip string) bool {
