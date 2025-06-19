@@ -1133,76 +1133,85 @@ func (tw *TCPWatch) updateIncomingIPs() {
 		{"/proc/net/gre6", "GRE"},
 	}
 
-	ipCounts := make(map[string]int)
+    ipCounts := make(map[string]int)
 
-	for _, file := range files {
-		data, err := ioutil.ReadFile(file.path)
-		if err != nil {
-			continue 
-		}
+    type connInfo struct {
+        srcPort string
+        dstPort string
+    }
 
-		lines := strings.Split(string(data), "\n")
-		for _, line := range lines[1:] {
-			fields := strings.Fields(line)
-			if len(fields) <= 2 {
-				continue
-			}
+    ipDetails := make(map[string]connInfo)
 
-			remoteHex := fields[2]
-			srcIP, _ := parseHexIPEnhanced(remoteHex)
-			if srcIP == "" {
-				continue
-			}
+    for _, file := range files {
+        data, err := ioutil.ReadFile(file.path)
+        if err != nil {
+            continue
+        }
 
-			ipCounts[srcIP]++
-		}
-	}
+        lines := strings.Split(string(data), "\n")
+        for _, line := range lines[1:] {
+            fields := strings.Fields(line)
+            if len(fields) < 3 {
+                continue
+            }
+            localHex := fields[1]
+            remoteHex := fields[2]
 
-	tw.incomingIPs = len(ipCounts)
+            srcIP, srcPort := parseHexIPEnhanced(remoteHex)
+            _, dstPort := parseHexIPEnhanced(localHex)
 
-	for ip, count := range ipCounts {
-		if count > 10 {
-			reason := fmt.Sprintf("Too many connections from %s: %d", ip, count)
-			_ = tw.blacklistIP(ip, "", "", "MULTI", reason) 
-		}
-	}
+            if srcIP == "" {
+                continue
+            }
+            ipCounts[srcIP]++
+            ipDetails[srcIP] = connInfo{srcPort: srcPort, dstPort: dstPort}
+        }
+    }
+
+    tw.incomingIPs = len(ipCounts)
+
+    for ip, count := range ipCounts {
+        if count > 10 {
+            details := ipDetails[ip]
+            _ = tw.blacklistIP(ip, details.srcPort, details.dstPort, "", "")
+            fmt.Printf("Blacklisted IP: %s | Source Port: %s | Destination Port: %s\n", ip, details.srcPort, details.dstPort)
+        }
+    }
 }
 
+func parseHexIPEnhanced(hexAddr string) (string, string) {
+    parts := strings.Split(hexAddr, ":")
+    if len(parts) != 2 {
+        return "", "" 
+    }
+    ipHex := parts[0]
+    portHex := parts[1]
 
+    port, err := strconv.ParseUint(portHex, 16, 16)
+    if err != nil {
+        return "", ""
+    }
 
-func parseHexIPEnhanced(remoteAddr string) (string, string) {
-	parts := strings.Split(remoteAddr, ":")
-	if len(parts) != 2 {
-		return "", ""
-	}
-
-	ipHex := parts[0]
-	portHex := parts[1]
-
-	portInt, err := strconv.ParseInt(portHex, 16, 32)
-	if err != nil {
-		return "", ""
-	}
-	port := fmt.Sprintf("%d", portInt)
-
-	if len(ipHex) == 8 { 
-		b, err := hex.DecodeString(ipHex)
-		if err != nil || len(b) != 4 {
-			return "", port
-		}
-		
-		ip := fmt.Sprintf("%d.%d.%d.%d", b[3], b[2], b[1], b[0])
-		return ip, port
-	} else if len(ipHex) == 32 { 
-		b, err := hex.DecodeString(ipHex)
-		if err != nil || len(b) != 16 {
-			return "", port
-		}
-		ip := net.IP(b)
-		return ip.String(), port
-	}
-
-	return "", port
+    var ip net.IP
+    if len(ipHex) == 8 {
+        b, err := hex.DecodeString(ipHex)
+        if err != nil || len(b) != 4 {
+            return "", ""
+        }
+        ip = net.IP{b[3], b[2], b[1], b[0]}
+    } else if len(ipHex) == 32 {
+        b, err := hex.DecodeString(ipHex)
+        if err != nil || len(b) != 16 {
+            return "", "" 
+        }
+        ip = make(net.IP, 16)
+        for i := 0; i < 16; i++ {
+            ip[i] = b[15-i]
+        }
+    } else {
+        return "", "" 
+    }
+    return ip.String(), fmt.Sprintf("%d", port)
 }
 
 func (tw *TCPWatch) drawTrafficGraph() string {
