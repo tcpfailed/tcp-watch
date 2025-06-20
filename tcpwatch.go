@@ -59,17 +59,16 @@ const (
 )
 
 const (
-	ATTACK_SYN  = "SYN Flood"
-	ATTACK_ACK  = "ACK Flood"
-	ATTACK_FIN  = "FIN Flood"
-	ATTACK_PSH  = "PSH Flood"
-	ATTACK_FRAG = "Fragment Flood"
-	ATTACK_AMP  = "Amplification"
-	ATTACK_GRE  = "GRE Flood"
-	ATTACK_STD  = "STD Flood"
-	ATTACK_XMAS = "XMAS Scan"
-	ATTACK_UDP  = "UDP Flood"
-	ATTACK_ICMP = "ICMP Flood"
+    ATTACK_SYN   = "SYN Flood"
+    ATTACK_ACK   = "ACK Flood"
+    ATTACK_FIN   = "FIN Flood"
+    ATTACK_PSH   = "PSH Flood"
+    ATTACK_FRAG  = "Fragmentation Attack"
+    ATTACK_AMP   = "Amplification Attack"
+    ATTACK_GRE   = "GRE Flood"
+    ATTACK_UDP   = "UDP Flood"
+    ATTACK_XMAS  = "XMAS Tree Attack"
+    ATTACK_STD   = "Standard DDoS"
 )
 
 type Blocker struct {
@@ -98,16 +97,16 @@ type PatternAnalyzer struct {
 }
 
 type AttackStats struct {
-	synCount  int
-	ackCount  int
-	finCount  int
-	pshCount  int
-	fragCount int
-	greCount  int
-	udpCount  int
-	icmpCount int
-	xmasCount int
-	ampFactor float64
+    synCount    int
+    ackCount    int
+    finCount    int
+    pshCount    int
+    fragCount   int
+    ampFactor   int
+    greCount    int
+    udpCount    int
+    xmasCount   int
+    icmpCount int
 }
 type AttackState struct {
     isOngoing    bool
@@ -129,12 +128,12 @@ type TCPWatch struct {
 	packetsPerSec   int
 	lastHighestPPS  int
 	incomingIPs     int
-	currentMbit     float64
-	avgMbit         float64
-	minMbit         float64
-	maxMbit         float64
-	totalGBytes     float64
-	values          []float64
+	currentTraffic   float64
+  currentMbit float64
+  maxMbit     float64
+  minMbit     float64
+  avgMbit     float64
+	values           []float64
 	systemIP        string
 	cpuModel        string
 	cpuUsage        float64
@@ -163,8 +162,77 @@ type TCPWatch struct {
   iface string
   ramTotal int
   handle *pcap.Handle
+  packetsPerIP map[string]*IPStats
+  unitMode     string
+  totalGBytes float64
+  unitLabel   string
+  whitelistStatus []string
 }
 
+type IPStats struct {
+    total     int
+    portCount map[string]int
+    protocol  string
+    srcPort   string
+    dstPort   string
+    attacks   AttackStats
+    lastBytes int64
+    ttl       uint8
+}
+
+func (tw *TCPWatch) loadWhitelist(path string) {
+	file, err := os.Open(path)
+	if err != nil {
+		fmt.Printf("Could not open whitelist file: %v\n", err)
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		ip := line
+		tw.whitelistedIPs[ip] = true
+
+		cmdCheck := exec.Command("iptables", "-C", "INPUT", "-s", ip, "-j", "ACCEPT")
+		if err := cmdCheck.Run(); err == nil {
+			fmt.Printf("Already whitelisted: %s\n", maskIP(ip))
+			continue
+		}
+
+		cmdAdd := exec.Command("iptables", "-A", "INPUT", "-s", ip, "-j", "ACCEPT")
+		if err := cmdAdd.Run(); err != nil {
+			fmt.Printf("Failed to add %s to iptables: %v\n", maskIP(ip), err)
+		} else {
+			fmt.Printf("Whitelisted IP: %s\n", maskIP(ip))
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Printf("Error reading whitelist file: %v\n", err)
+	}
+}
+
+func maskIP(ipStr string) string {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return ipStr
+	}
+	if ip.To4() != nil {
+		parts := strings.Split(ipStr, ".")
+		if len(parts) == 4 {
+			return fmt.Sprintf("%s.%s.**%s.**", parts[0], parts[1], parts[2])
+		}
+	}
+	parts := strings.Split(ipStr, ":")
+	if len(parts) > 1 {
+		return parts[0] + ":" + parts[1] + "::****"
+	}
+	return ipStr
+}
 
 func (tw *TCPWatch) stopPacketCapture() {
 	if tw.handle != nil {
@@ -620,15 +688,7 @@ func parseHexIP(hexIP string) string {
     return fmt.Sprintf("%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3])
 }
 
-func detectAttack(ipData *struct {
-    total     int
-    portCount map[string]int
-    protocol  string
-    srcPort   string
-    dstPort   string
-    attacks   AttackStats
-    lastBytes int64
-}) string {
+func detectAttack(ipData *IPStats) string {
     if ipData.attacks.synCount > 100 {
         return ATTACK_SYN
     }
@@ -656,10 +716,10 @@ func detectAttack(ipData *struct {
     if ipData.attacks.xmasCount > 10 {
         return ATTACK_XMAS
     }
-    if ipData.total > 300 && 
-       (ipData.attacks.synCount > 0 || 
-        ipData.attacks.ackCount > 0 || 
-        ipData.attacks.udpCount > 0) {
+    if ipData.total > 300 &&
+        (ipData.attacks.synCount > 0 ||
+            ipData.attacks.ackCount > 0 ||
+            ipData.attacks.udpCount > 0) {
         return ATTACK_STD
     }
 
@@ -668,51 +728,49 @@ func detectAttack(ipData *struct {
 
 func newTCPWatch() *TCPWatch {
 	cleanupOldPcaps()
-    iface, err := getDefaultInterface()
-    if err != nil {
-        log.Fatalf("Failed to detect default interface: %v", err)
-    }
+	  iface, err := getDefaultInterface()
+	    if err != nil {
+		log.Fatalf("Failed to detect default interface: %v", err)
+	}
 
-    fmt.Printf("Detected default network interface: %s\n", iface)
+	fmt.Printf("Detected default network interface: %s\n", iface)
 
-    tw := &TCPWatch{
-        startTime:        time.Now(),
-        values:           make([]float64, 0, GRAPH_WIDTH),
-        minMbit:          math.MaxFloat64,
-        ramTotal:         getTotalRAM(), 
-        isCapturing:      false,
-        currentPcapFile:  "",
-        blockedIPs:       make(map[string]time.Time),
-        blacklistCount:   0,
-        attackingIPs:     make(map[string]string),
-        lastDisplayIndex: 0,
-        iface:            iface,
-        whitelistedIPs: map[string]bool{
-            "IP": true,
-            "IP": true,
-            "127.0.0.1":     true,
-            "::1":           true,
-        },
-        analyzer: &PatternAnalyzer{
-            patterns:   make(map[string]*AttackPattern),
-            sampleSize: 1000,
-            threshold:  100,
-            mu:         sync.RWMutex{},
-        },
-        bpfRules: make(map[string]string),
-        attackState: AttackState{
-            isOngoing:   false,
-            attackerIPs: make(map[string]bool),
-        },
-        lastAlertTime: time.Now(),
-    }
+	tw := &TCPWatch{
+		startTime:        time.Now(),
+		values:           make([]float64, 0, GRAPH_WIDTH),
+		minMbit:          math.MaxFloat64,
+		ramTotal:         getTotalRAM(),
+		isCapturing:      false,
+		currentPcapFile:  "",
+		blockedIPs:       make(map[string]time.Time),
+		blacklistCount:   0,
+		attackingIPs:     make(map[string]string),
+		lastDisplayIndex: 0,
+		iface:            iface,
+		whitelistedIPs:   make(map[string]bool),
+		analyzer: &PatternAnalyzer{
+			patterns:   make(map[string]*AttackPattern),
+			sampleSize: 1000,
+			threshold:  100,
+			mu:         sync.RWMutex{},
+		},
+		bpfRules: make(map[string]string),
+		attackState: AttackState{
+			isOngoing:   false,
+			attackerIPs: make(map[string]bool),
+		},
+		lastAlertTime: time.Now(),
+	}
 
-    tw.systemIP = tw.getServerIP()
-    tw.updateSystemInfo()
+	tw.systemIP = tw.getServerIP()
+	tw.updateSystemInfo()
 
-    go tw.startPacketAnalysis(tw.iface)
+	
+	tw.loadWhitelist("whitelist.txt")
 
-    return tw
+	go tw.startPacketAnalysis(tw.iface)
+
+	return tw
 }
 
 func (tw *TCPWatch) logBlacklistedIP(entry BlacklistEntry) {
@@ -903,215 +961,168 @@ func (tw *TCPWatch) updateNetworkStats() {
 
     packets := 0
     var totalBytes int64
-    packetsPerIP := make(map[string]*struct {
-        total     int
-        portCount map[string]int
-        protocol  string
-        srcPort   string
-        dstPort   string
-        attacks   AttackStats
-        lastBytes int64
-    })
+    blacklistedIPs := make(map[string]bool)
+
+    if tw.packetsPerIP == nil {
+        tw.packetsPerIP = make(map[string]*IPStats)
+    }
 
     packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
     packetChan := packetSource.Packets()
     timeout := time.After(time.Second)
 
+loop:
     for {
         select {
         case packet := <-packetChan:
-            if packet != nil {
-                packets++
-                totalBytes += int64(len(packet.Data()))
+            if packet == nil {
+                continue
+            }
+            packets++
+            totalBytes += int64(len(packet.Data()))
 
-                ipLayer := packet.Layer(layers.LayerTypeIPv4)
-                if ipLayer != nil {
-                    ip, _ := ipLayer.(*layers.IPv4)
-                    if ip != nil {
-                        srcIP := ip.SrcIP.String()
-                        
-                        if _, exists := packetsPerIP[srcIP]; !exists {
-                            packetsPerIP[srcIP] = &struct {
-                                total     int
-                                portCount map[string]int
-                                protocol  string
-                                srcPort   string
-                                dstPort   string
-                                attacks   AttackStats
-                                lastBytes int64
-                            }{
-                                portCount: make(map[string]int),
-                            }
-                        }
+            ipLayer := packet.Layer(layers.LayerTypeIPv4)
+            if ipLayer == nil {
+                continue
+            }
 
-                        ipData := packetsPerIP[srcIP]
-                        
-                        
-                        if ip.Flags&layers.IPv4MoreFragments != 0 || ip.FragOffset != 0 {
-                            ipData.attacks.fragCount++
-                        }
+            ip, _ := ipLayer.(*layers.IPv4)
+            if ip == nil {
+                continue
+            }
 
-                        switch {
-                        case packet.Layer(layers.LayerTypeTCP) != nil:
-                            tcp, _ := packet.Layer(layers.LayerTypeTCP).(*layers.TCP)
-                            ipData.protocol = "TCP"
-                            ipData.srcPort = tcp.SrcPort.String()
-                            ipData.dstPort = tcp.DstPort.String()
-
-                            
-                            if tcp.SYN && !tcp.ACK { 
-                                ipData.attacks.synCount++
-                            }
-                            if tcp.ACK && !tcp.SYN && !tcp.FIN && !tcp.PSH { 
-                                ipData.attacks.ackCount++
-                            }
-                            if tcp.FIN && !tcp.ACK { 
-                                ipData.attacks.finCount++
-                            }
-                            if tcp.PSH { 
-                                ipData.attacks.pshCount++
-                            }
-
-                            if tcp.FIN && tcp.PSH && tcp.URG {
-                                ipData.attacks.xmasCount++
-                            }
-
-                        case packet.Layer(layers.LayerTypeUDP) != nil:
-                            udp, _ := packet.Layer(layers.LayerTypeUDP).(*layers.UDP)
-                            ipData.protocol = "UDP"
-                            ipData.srcPort = udp.SrcPort.String()
-                            ipData.dstPort = udp.DstPort.String()
-                            ipData.attacks.udpCount++
-
-
-                            packetSize := int64(len(packet.Data()))
-                            if ipData.lastBytes > 0 {
-                                ratio := float64(packetSize) / float64(ipData.lastBytes)
-                                if ratio > ipData.attacks.ampFactor {
-                                    ipData.attacks.ampFactor = ratio
-                                }
-                            }
-                            ipData.lastBytes = packetSize
-
-                        case packet.Layer(layers.LayerTypeGRE) != nil:
-                            ipData.protocol = "GRE"
-                            ipData.attacks.greCount++
-
-                        case packet.Layer(layers.LayerTypeICMPv4) != nil:
-                            ipData.protocol = "ICMP"
-                            ipData.attacks.icmpCount++
-                        }
-
-
-                        ipData.total++
-                        portKey := fmt.Sprintf("%s:%s", ipData.srcPort, ipData.dstPort)
-                        ipData.portCount[portKey]++
-
-
-                        attackType := detectAttack(ipData)
-                        if attackType != "" {
-                            reason := fmt.Sprintf("Detected %s attack: %d packets/sec", 
-                                attackType, ipData.total)
-                            tw.blacklistIP(srcIP, 
-                                ipData.srcPort, 
-                                ipData.dstPort, 
-                                ipData.protocol, 
-                                reason)
-                        }
-                    }
+            srcIP := ip.SrcIP.String()
+            if _, exists := tw.packetsPerIP[srcIP]; !exists {
+                tw.packetsPerIP[srcIP] = &IPStats{
+                    portCount: make(map[string]int),
+                    ttl:       ip.TTL,
                 }
             }
+
+            ipData := tw.packetsPerIP[srcIP]
+            ipData.ttl = ip.TTL
+
+            if ip.Flags&layers.IPv4MoreFragments != 0 || ip.FragOffset != 0 {
+                ipData.attacks.fragCount++
+            }
+
+            switch {
+            case packet.Layer(layers.LayerTypeTCP) != nil:
+                tcp, _ := packet.Layer(layers.LayerTypeTCP).(*layers.TCP)
+                ipData.protocol = "TCP"
+                ipData.srcPort = tcp.SrcPort.String()
+                ipData.dstPort = tcp.DstPort.String()
+
+                if tcp.SYN && !tcp.ACK {
+                    ipData.attacks.synCount++
+                }
+                if tcp.ACK && !tcp.SYN && !tcp.FIN && !tcp.PSH {
+                    ipData.attacks.ackCount++
+                }
+                if tcp.FIN && !tcp.ACK {
+                    ipData.attacks.finCount++
+                }
+                if tcp.PSH {
+                    ipData.attacks.pshCount++
+                }
+                if tcp.FIN && tcp.PSH && tcp.URG {
+                    ipData.attacks.xmasCount++
+                }
+
+            case packet.Layer(layers.LayerTypeUDP) != nil:
+                udp, _ := packet.Layer(layers.LayerTypeUDP).(*layers.UDP)
+                ipData.protocol = "UDP"
+                ipData.srcPort = udp.SrcPort.String()
+                ipData.dstPort = udp.DstPort.String()
+                ipData.attacks.udpCount++
+
+                packetSize := int64(len(packet.Data()))
+                if ipData.lastBytes > 0 {
+                    ratio := int(packetSize) / int(ipData.lastBytes)
+                    if ratio > ipData.attacks.ampFactor {
+                        ipData.attacks.ampFactor = ratio
+                    }
+                }
+                ipData.lastBytes = packetSize
+
+            case packet.Layer(layers.LayerTypeGRE) != nil:
+                ipData.protocol = "GRE"
+                ipData.attacks.greCount++
+
+            case packet.Layer(layers.LayerTypeICMPv4) != nil:
+                ipData.protocol = "ICMP"
+                ipData.attacks.icmpCount++
+            }
+
+            ipData.total++
+            portKey := fmt.Sprintf("%s:%s", ipData.srcPort, ipData.dstPort)
+            ipData.portCount[portKey]++
+
+            attackType := detectAttack(ipData)
+            if attackType != "" && !blacklistedIPs[srcIP] {
+                reason := fmt.Sprintf("Detected %s attack: %d packets/sec", attackType, ipData.total)
+                tw.blacklistIP(srcIP, ipData.srcPort, ipData.dstPort, ipData.protocol, reason)
+                blacklistedIPs[srcIP] = true
+            }
+
         case <-timeout:
-            goto ProcessStats
+            break loop
         }
     }
 
-ProcessStats:
     tw.packetsPerSec = packets
     if packets > tw.lastHighestPPS {
         tw.lastHighestPPS = packets
     }
 
-    if (tw.incomingIPs > 100 || packets > 300) && !tw.isCapturing {
-        tw.isCapturing = true
-        go func() {
-            reason := "high_traffic"
-            if tw.incomingIPs > 100 {
-                reason = "high_ips"
-            }
-            tw.currentPcapFile = startPacketCapture(tw.iface, reason)
-            time.Sleep(60 * time.Second)
-            tw.isCapturing = false
-            tw.currentPcapFile = "" 
-        }()
+    bits := float64(totalBytes * 8)
 
-        if packets > 300 {
-            for ip, ipData := range packetsPerIP {
-                if ipData.total > 30 { 
-                    tw.blacklistIP(ip,
-                        ipData.srcPort,
-                        ipData.dstPort,
-                        ipData.protocol,
-                        "High traffic threshold exceeded")
-                }
-            }
-        }
+    unit := tw.unitMode
+    if unit == "" {
+        unit = "mbit"
     }
 
-    mbits := float64(totalBytes*8) / 1000000
-    tw.currentMbit = mbits
-    tw.values = append(tw.values, mbits)
+    var displayValue float64
+
+switch unit {
+case "kbit":
+    displayValue = bits / 1_000
+    tw.unitLabel = "Kbit/s"
+case "mbit":
+    displayValue = bits / 1_000_000
+    tw.unitLabel = "Mbit/s"
+    if displayValue > 1000 {
+        displayValue /= 1000
+        tw.unitLabel = "Gbit/s"
+    }
+case "gbit":
+    displayValue = bits / 1_000_000_000
+    tw.unitLabel = "Gbit/s"
+default:
+    displayValue = bits / 1_000_000
+    tw.unitLabel = "Mbit/s"
+}
+
+    tw.currentMbit = displayValue
+    tw.values = append(tw.values, displayValue)
     if len(tw.values) > GRAPH_WIDTH {
         tw.values = tw.values[1:]
     }
 
-    if mbits > tw.maxMbit {
-        tw.maxMbit = mbits
+    if displayValue > tw.maxMbit {
+        tw.maxMbit = displayValue
     }
-    if mbits < tw.minMbit {
-        tw.minMbit = mbits
+    if tw.minMbit == 0 || displayValue < tw.minMbit {
+        tw.minMbit = displayValue
     }
-    if tw.avgMbit == 0 {
-        tw.avgMbit = mbits
-    } else {
-        tw.avgMbit = (tw.avgMbit + mbits) / 2
+
+    sum := 0.0
+    for _, v := range tw.values {
+        sum += v
     }
+    tw.avgMbit = sum / float64(len(tw.values))
 
     tw.totalGBytes += float64(totalBytes) / (1024 * 1024 * 1024)
-}
-func parseHexIPAndPort(hexAddr string) (string, string) {
-	parts := strings.Split(hexAddr, ":")
-	if len(parts) != 2 {
-		return "", ""
-	}
-
-	ipHex := parts[0]
-	portHex := parts[1]
-
-	portInt, err := strconv.ParseInt(portHex, 16, 32)
-	if err != nil {
-		return "", ""
-	}
-	port := strconv.Itoa(int(portInt))
-
-	if len(ipHex) == 8 {
-		b, err := hex.DecodeString(ipHex)
-		if err != nil || len(b) != 4 {
-			return "", port
-		}
-		return net.IPv4(b[3], b[2], b[1], b[0]).String(), port
-	}
-
-	if len(ipHex) == 32 {
-		b, err := hex.DecodeString(ipHex)
-		if err != nil || len(b) != 16 {
-			return "", port
-		}
-		ip := net.IP(b)
-		return ip.String(), port
-	}
-
-	return "", port
 }
 
 
@@ -1173,7 +1184,7 @@ func (tw *TCPWatch) updateIncomingIPs() {
         if count > 10 {
             details := ipDetails[ip]
             _ = tw.blacklistIP(ip, details.srcPort, details.dstPort, "", "")
-            fmt.Printf("Blacklisted IP: %s | Source Port: %s | Destination Port: %s\n", ip, details.srcPort, details.dstPort)
+            
         }
     }
 }
@@ -1425,12 +1436,13 @@ fmt.Printf("%s %-*s %s\n",
         colorGray + boxVertical)
 
     trafficStats := []string{
-        fmt.Sprintf("Curr: %.2f MBit/s", tw.currentMbit),
-        fmt.Sprintf("Avg: %.2f MBit/s", tw.avgMbit),
-        fmt.Sprintf("Min: %.2f MBit/s", tw.minMbit),
-        fmt.Sprintf("Max: %.2f MBit/s", tw.maxMbit),
-        fmt.Sprintf("Ttl: %.2f GByte", tw.totalGBytes),
-    }
+    fmt.Sprintf("Curr: %.2f %s", tw.currentMbit, tw.unitLabel),
+    fmt.Sprintf("Avg: %.2f MBit/s", tw.avgMbit),
+    fmt.Sprintf("Min: %.2f MBit/s", tw.minMbit),
+    fmt.Sprintf("Max: %.2f MBit/s", tw.maxMbit),
+    fmt.Sprintf("Ttl: %.2f GByte", tw.totalGBytes),
+    
+}
 
     for _, stat := range trafficStats {
         fmt.Printf("%s %-*s %s\n", 
@@ -1439,6 +1451,7 @@ fmt.Printf("%s %-*s %s\n",
             stat,
             colorGray + boxVertical)
     }
+
 
     fmt.Printf("%s %-*s %s\n", 
         colorGray + boxVertical,
