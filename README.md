@@ -56,7 +56,7 @@ Automatic IP reporting of attacking ips are now implemented. To make this featur
 
 # 🧠 TIMEOUT INTERVAL
 If your encountering the error below, thats due to you setting your timeout any higher than 600ms or any timeout lower than 50ms
-![image](https://github.com/user-attachments/assets/cebbaf50-a926-4afd-b57d-9ff14a5144b2)
+![image](https://github.com/user-attachments/assets/48975e38-db6d-470a-9082-8d90feba7590)
 
 But if you stay between 50-600ms this will not happen and should load as usual as seen below ![image](https://github.com/user-attachments/assets/7ca4e23c-3912-4617-adc3-fc27d50bcf69)
 
