@@ -41,13 +41,6 @@ A real-time network monitoring & DDoS protection tool written in Go, featuring l
 # 📋 API HELP
 You need to use the /data endpoint if you plan to run this on a dstat server but if you dont plan to than you can enjoy the dashboard with statistics and a live chart  ![image](https://github.com/user-attachments/assets/f7452a87-348b-4f4e-a400-13310a0b75e1) 
 
-
-# 🧠 Help
-If you get an error **[./tcpwatch.go:694:13: duplicate key "IP" in map literal]** thats just due to you not putting your server ip in on line 694. You need to replace one of the "IP" literals with your ssh ip. This feature is so that tcp dump or any other protection measure doesn't accidentally blacklist your server ip and you should probably add yourself unless your adding ip tables, which this script does not interfer with ip tables just adds the malicious ips, ignores the ips you set in this field to your tables similar to an ip set.
-
-![image](https://github.com/user-attachments/assets/4f133771-7dc2-4d5f-9e15-253bf0e481a1)
-
-
 # 🧠 LOGS
 The blacklistedips.txt is a simple temporary log file for displaying it to the user (you) its just something the logs can quickly allocate to & be ready quickly so it can list all ips in the attacking ips section and flush it when its done reading / displaying so its more stable. 
 ![image](https://github.com/user-attachments/assets/3e482a15-9d7c-4bf2-8757-0ebe606b2f19)
@@ -66,7 +59,7 @@ If your encountering the error below, thats due to you setting your timeout any 
 
 But if you stay between 50-600ms this will not happen and should load as usual as seen below ![image](https://github.com/user-attachments/assets/7ca4e23c-3912-4617-adc3-fc27d50bcf69)
 
-# ABUSE DATABASE AUTOMATIC REPORTING API HELP.
+# 🧠 ABUSE DATABASE AUTOMATIC REPORTING API HELP.
 > **FIRST CREATE AN ACCOUNT AND LOGIN** ![image](https://github.com/user-attachments/assets/1a2fef5f-2acf-4b3f-bf59-b78bd3da1d0a)
 
 > **SECOND OFF PRESS ON YOUR USERNAME AND PRESS ACCOUNT** ![image](https://github.com/user-attachments/assets/55649841-61ed-46b4-a70a-ce40ac0f9383)
