@@ -346,8 +346,14 @@ func runScreenSession(sessionName, goFile string) error {
 }
 
 func killScreenSession(sessionName string) error {
-    cmd := exec.Command("pkill", "-f", fmt.Sprintf("SCREEN.*%s", sessionName))
-    return cmd.Run()
+    cmd := exec.Command("screen", "-S", sessionName, "-X", "quit")
+    if err := cmd.Run(); err != nil {
+        cmd = exec.Command("pkill", "-f", sessionName)
+        if err := cmd.Run(); err != nil {
+            return fmt.Errorf("failed to kill screen session %s: %v", sessionName, err)
+        }
+    }
+    return nil
 }
 
 func runAbuseDBInBackground() error {
@@ -1710,7 +1716,7 @@ func getServerIP() string {
     }
     return "unknown"
 }
-    
+
 func main() {
     var intervalMS int
     flag.IntVar(&intervalMS, "t", 0, "Required: Update interval in milliseconds (minimum 50ms)")
@@ -1756,6 +1762,21 @@ func main() {
     abuseDBSession := "abusedb_session"
     bpfSession := "bpf_session"
 
+    cleanupSessions := func() {
+        fmt.Println("\nCleaning up screen sessions...")
+        killScreenSession(abuseDBSession)
+        killScreenSession(bpfSession)
+        
+        exec.Command("screen", "-X", "-S", abuseDBSession, "quit").Run()
+        exec.Command("screen", "-X", "-S", bpfSession, "quit").Run()
+        
+        
+        time.Sleep(500 * time.Millisecond)
+    }
+
+    
+    defer cleanupSessions()
+
     if err := runScreenSession(abuseDBSession, "abusedb.go"); err != nil {
         fmt.Println("Failed to start abusedb.go:", err)
     } else {
@@ -1788,23 +1809,7 @@ func main() {
             fmt.Print("\033[?25h")
             fmt.Print("\033[2J")
             fmt.Print("\033[H")
-
-            fmt.Println("\nStopping background screen sessions...")
-
-            if err := killScreenSession(abuseDBSession); err != nil {
-                fmt.Println("Error stopping abusedb screen session:", err)
-            } else {
-                fmt.Println("Stopped abusedb screen session.")
-            }
-
-            if err := killScreenSession(bpfSession); err != nil {
-                fmt.Println("Error stopping bpf screen session:", err)
-            } else {
-                fmt.Println("Stopped bpf screen session.")
-            }
-
-            fmt.Println("Shutdown complete.")
-            return
+            return 
 
         case <-ticker.C:
             tw.updateSystemInfo()
