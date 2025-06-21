@@ -38,6 +38,9 @@ A real-time network monitoring & DDoS protection tool written in Go, featuring l
   - Added -t timeout options between 30-300ms core components like proc net wont update and are set hard coded for 300 ms
   - Updated webserver
   - Added whitelist.txt instead of hardcoding for ease of access, to fix any errors if you dont edit it
+  - Fixed old pcaps not being deleted. It now deletes pcaps upon loading TCP-WATCH
+  - Fixed bpf, abuse db sessions not getting killed by simply process tree cleanup
+  - Fixed when pcaps are in progress not displaying this was due to not having the feature that called to check to see if a pcap was currently in progress
 
 # 📋 API HELP
 You need to use the /data endpoint if you plan to run this on a dstat server but if you dont plan to than you can enjoy the dashboard with statistics and a live chart  ![image](https://github.com/user-attachments/assets/f7452a87-348b-4f4e-a400-13310a0b75e1) 
