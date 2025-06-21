@@ -1,8 +1,6 @@
 # ⚠️ USER WARNING
 When under an attack with high cpu usage and its freezing. This is due to running the bpf.go script under high cpu usage since it constantly create and captures packets for bpf. If you are having freezing issues on the script just end bpf.go whichever way you started it if its freezing. This is a simple issue due to constant capture. This is the solution 
 
-# 📋 INSTALL GUIDE IS BELOW
-
 ![image](https://github.com/user-attachments/assets/2c06d2d7-0592-40b0-95db-dd6e0b621aa2)
 # TCP Watch v1.0.2
 ![License](https://img.shields.io/badge/license-Custom%20BSD-blue)
