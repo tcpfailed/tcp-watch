@@ -6,17 +6,18 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
-	"time"
+	"sync"
 	"syscall"
+	"time"
 )
 
-const (
-	bpfFile      = "tcpwatch_bpf.txt"
-)
+const bpfFile = "tcpwatch_bpf.txt"
 
 var (
+	mu               sync.Mutex
 	runningProcesses = make(map[string]*exec.Cmd)
 	activeFilters    = make(map[string]string)
 	lastModTime      time.Time
@@ -27,8 +28,20 @@ func main() {
 	log.Println("[BPFMaker] Starting with enhanced monitoring...")
 
 	if err := verifyEnvironment(); err != nil {
-		log.Fatalf("Startup verification failed: %v", err)
+		log.Printf("Startup verification WARNING: %v", err)
 	}
+
+	defer killAllRunningCaptures()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		s := <-sigCh
+		log.Printf("Received signal: %v - shutting down", s)
+		killAllRunningCaptures()
+		time.Sleep(500 * time.Millisecond) 
+		os.Exit(0)
+	}()
 
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -56,7 +69,7 @@ func verifyEnvironment() error {
 	}
 
 	if _, err := exec.LookPath("tcpdump"); err != nil {
-		return fmt.Errorf("tcpdump not found in PATH: %w", err)
+		return fmt.Errorf("tcpdump not found in PATH, make sure tcpdump is installed and accessible: %w", err)
 	}
 	log.Println("Verified tcpdump availability")
 
@@ -70,7 +83,7 @@ func checkAndProcessBPF() error {
 	}
 
 	if info.ModTime().Equal(lastModTime) {
-		return nil 
+		return nil
 	}
 	lastModTime = info.ModTime()
 
@@ -117,7 +130,10 @@ func checkAndProcessBPF() error {
 		}
 		seenRules[pattern] = true
 
-		if prev, exists := activeFilters[pattern]; exists && prev == bpf {
+		mu.Lock()
+		prev, exists := activeFilters[pattern]
+		mu.Unlock()
+		if exists && prev == bpf {
 			log.Printf("Rule unchanged for %s, skipping restart", pattern)
 			continue
 		}
@@ -135,7 +151,9 @@ func checkAndProcessBPF() error {
 			continue
 		}
 
+		mu.Lock()
 		activeFilters[pattern] = bpf
+		mu.Unlock()
 		rulesAdded++
 		log.Printf("Successfully activated rule for %s", pattern)
 	}
@@ -148,13 +166,19 @@ func checkAndProcessBPF() error {
 }
 
 func startTcpdumpCapture(name, filter string) error {
+	mu.Lock()
 	if cmd, exists := runningProcesses[name]; exists {
+		mu.Unlock()
 		log.Printf("Stopping existing capture for %s (PID %d)", name, cmd.Process.Pid)
 		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM); err != nil {
 			log.Printf("Warning: failed to kill process group %d: %v", cmd.Process.Pid, err)
 		}
-		delete(runningProcesses, name)
 		time.Sleep(200 * time.Millisecond)
+		mu.Lock()
+		delete(runningProcesses, name)
+		mu.Unlock()
+	} else {
+		mu.Unlock()
 	}
 
 	outputFile := filepath.Join("bpf_logs", sanitizeFilename(name)+".pcap")
@@ -169,7 +193,10 @@ func startTcpdumpCapture(name, filter string) error {
 		return fmt.Errorf("tcpdump failed to start: %w", err)
 	}
 
+	mu.Lock()
 	runningProcesses[name] = cmd
+	mu.Unlock()
+
 	go monitorProcess(name, cmd)
 
 	log.Printf("Started tcpdump for %s (PID %d)", name, cmd.Process.Pid)
@@ -178,12 +205,53 @@ func startTcpdumpCapture(name, filter string) error {
 
 func monitorProcess(name string, cmd *exec.Cmd) {
 	err := cmd.Wait()
+	mu.Lock()
 	delete(runningProcesses, name)
+	mu.Unlock()
 	if err != nil {
 		log.Printf("Capture process for %s ended with error: %v", name, err)
 	} else {
 		log.Printf("Capture process for %s completed successfully", name)
 	}
+}
+
+func killAllRunningCaptures() {
+	log.Printf("Killing all running tcpdump processes...")
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	for name, cmd := range runningProcesses {
+		if cmd.Process == nil {
+			continue
+		}
+		pgid, err := syscall.Getpgid(cmd.Process.Pid)
+		if err != nil {
+			log.Printf("Failed to get pgid for %s (PID %d): %v", name, cmd.Process.Pid, err)
+			continue
+		}
+		log.Printf("Sending SIGTERM to process group %d for %s", pgid, name)
+		_ = syscall.Kill(-pgid, syscall.SIGTERM)
+	}
+
+	mu.Unlock()
+	time.Sleep(1 * time.Second)
+	mu.Lock()
+
+	for name, cmd := range runningProcesses {
+		if cmd.Process == nil {
+			continue
+		}
+		pgid, err := syscall.Getpgid(cmd.Process.Pid)
+		if err != nil {
+			continue
+		}
+		log.Printf("Sending SIGKILL to process group %d for %s", pgid, name)
+		_ = syscall.Kill(-pgid, syscall.SIGKILL)
+	}
+
+	runningProcesses = make(map[string]*exec.Cmd)
+	activeFilters = make(map[string]string)
 }
 
 func sanitizeFilename(name string) string {
