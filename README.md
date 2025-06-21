@@ -72,7 +72,7 @@ But if you stay between 50-600ms this will not happen and should load as usual a
 > **FINALLY NAVIGATE TO THE API SECTION AND CREATE A FREE API KEY AND GO TO "abusedb.go" and apply your api key on line 51** ![image](https://github.com/user-attachments/assets/8b78d069-2811-4154-bfc0-4da2560a41a7)
 
 # 🧠 ERROR WHEN RUNNING BPFMAKER.GO 
-If your encountering this error make the ulimit 99999 or do ulimit -u 99999. But only happens if you run more than once on some hostings. You should only have to run once
+If your encountering this error run pkill tcpdump
 ![image](https://github.com/user-attachments/assets/3001e932-bae1-4139-97a7-7f7e92dc5126)
 
 
