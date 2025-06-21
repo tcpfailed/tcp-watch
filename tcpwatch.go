@@ -260,15 +260,46 @@ func (tw *TCPWatch) stopPacketCapture() {
 }
 
 func cleanupOldPcaps() {
-	files, err := filepath.Glob("*.pcap")
-	if err != nil {
-		fmt.Printf("Failed to find past pcap files: %v\n", err)
-		return
-	}
+    patterns := []string{"*.pcap", "*.pcapng", "*.cap"}
+    deleted := 0
+    
+    for _, pattern := range patterns {
+        files, err := filepath.Glob(pattern)
+        if err != nil {
+            fmt.Printf("Error searching for %s files: %v\n", pattern, err)
+            continue
+        }
 
-	for _, f := range files {
-		os.Remove(f)
-	}
+        if len(files) > 0 {
+            fmt.Printf("Found %d %s files to clean up\n", len(files), pattern)
+        }
+
+        for _, f := range files {
+            fullPath, _ := filepath.Abs(f)
+            fmt.Printf("Attempting to delete: %s\n", fullPath)
+            
+            for attempt := 1; attempt <= 3; attempt++ {
+                err := os.Remove(f)
+                if err == nil {
+                    deleted++
+                    fmt.Printf("Successfully deleted: %s\n", fullPath)
+                    break
+                }
+                
+                if attempt == 3 {
+                    fmt.Printf("Failed to delete %s after 3 attempts: %v\n", fullPath, err)
+                } else {
+                    time.Sleep(100 * time.Millisecond * time.Duration(attempt))
+                }
+            }
+        }
+    }
+
+    if deleted == 0 {
+        fmt.Println("No pcap files found to delete")
+    } else {
+        fmt.Printf("Deleted %d old pcap files\n", deleted)
+    }
 }
 
 func NewBlocker(threshold int) *Blocker {
