@@ -40,6 +40,7 @@ const (
 	colorGray      = "\033[90m"
 	colorYellowBg  = "\033[30;43m"
 	colorBgReset   = "\033[49m"
+ colorGreenBg    = "\x1b[42m"
 
 	boxVertical    = "║"
 	boxHorizontal  = "═"
@@ -167,6 +168,11 @@ type TCPWatch struct {
   totalGBytes float64
   unitLabel   string
   whitelistStatus []string
+  stopAnalysis  chan struct{}
+  mu            sync.Mutex
+  isDone        bool
+  extractFlags func(string) []string 
+  
 }
 
 type IPStats struct {
@@ -406,22 +412,35 @@ showASCIILoadingScreen()
 }
 
 func (tw *TCPWatch) startPacketAnalysis(interfaceName string) {
-	tw.interfaceName = interfaceName 
+    tw.interfaceName = interfaceName 
+    tw.stopAnalysis = make(chan struct{})
 
-	go func() {
-		for {
-			cmd := exec.Command("tcpdump", "-i", interfaceName, "-n", "-v", "-c", "1000")
-			output, err := cmd.Output()
-			if err != nil {
-				fmt.Printf("tcpdump error: %v\n", err)
-				time.Sleep(time.Second)
-				continue
-			}
+    go func() {
+        ticker := time.NewTicker(time.Second)
+        defer ticker.Stop()
 
-			tw.analyzePackets(string(output))
-			time.Sleep(time.Second)
-		}
-	}()
+        for {
+            select {
+            case <-ticker.C:
+                cmd := exec.Command("tcpdump", "-i", interfaceName, "-n", "-v", "-c", "1000")
+                output, err := cmd.Output()
+                if err != nil {
+                    fmt.Printf("tcpdump error: %v\n", err)
+                    continue
+                }
+                tw.analyzePackets(string(output))
+
+            case <-tw.stopAnalysis:
+                return
+            }
+        }
+    }()
+}
+
+func (tw *TCPWatch) Stop() {
+    if tw.stopAnalysis != nil {
+        close(tw.stopAnalysis)
+    }
 }
 
 func (tw *TCPWatch) extractPattern(line string) string {
@@ -435,11 +454,12 @@ func (tw *TCPWatch) extractPattern(line string) string {
 
 func (tw *TCPWatch) analyzePackets(output string) {
     lines := strings.Split(output, "\n")
+    capturedSomething := false
+
     for _, line := range lines {
         if line == "" {
             continue
         }
-
         pattern := tw.extractPattern(line)
         if pattern == "" {
             continue
@@ -466,7 +486,7 @@ func (tw *TCPWatch) analyzePackets(output string) {
             p.Protocols[proto]++
         }
 
-        flags := extractFlags(line)
+        flags := tw.extractFlags(line)
         for _, flag := range flags {
             p.Flags[flag]++
         }
@@ -481,12 +501,44 @@ func (tw *TCPWatch) analyzePackets(output string) {
             p.PacketSizes = append(p.PacketSizes, size)
         }
 
-        if p.Count >= tw.analyzer.threshold && p.BPFRule == "" {
-            p.BPFRule = tw.generateBPFRule(p)
-            tw.applyBPFRule(p.BPFRule)
-        }
+        if p.Count >= tw.analyzer.threshold {
+            if !tw.isCapturing && tw.currentPcapFile == "" {
+                timestamp := time.Now().Format("20060102-150405")
+                tw.currentPcapFile = fmt.Sprintf("attack_dump_attack_detected_autotcpwatch-capture-%s.pcap", timestamp)
+                tw.isCapturing = true
+                go func() {
+                    done := make(chan struct{})
+                    go func() {
+                        _ = tw.startPacketCapture(tw.interfaceName, tw.currentPcapFile)
+                        close(done)
+                    }()
 
+                    select {
+                    case <-done:
+                    case <-time.After(60 * time.Second):
+                    }
+
+                    tw.mu.Lock()
+                    tw.isCapturing = false
+                    tw.currentPcapFile = ""
+                    tw.mu.Unlock()
+                }()
+                capturedSomething = true
+            }
+            
+            if p.BPFRule == "" {
+                p.BPFRule = tw.generateBPFRule(p)
+                tw.applyBPFRule(p.BPFRule)
+            }
+        }
         tw.analyzer.mu.Unlock()
+    }
+
+    if !capturedSomething && tw.isCapturing {
+        tw.mu.Lock()
+        tw.isCapturing = false
+        tw.currentPcapFile = ""
+        tw.mu.Unlock()
     }
 }
 
@@ -727,50 +779,64 @@ func detectAttack(ipData *IPStats) string {
 }
 
 func newTCPWatch() *TCPWatch {
-	cleanupOldPcaps()
-	  iface, err := getDefaultInterface()
-	    if err != nil {
-		log.Fatalf("Failed to detect default interface: %v", err)
-	}
+    cleanupOldPcaps()
+    iface, err := getDefaultInterface()
+    if err != nil {
+        log.Fatalf("Failed to detect default interface: %v", err)
+    }
 
-	fmt.Printf("Detected default network interface: %s\n", iface)
+    fmt.Printf("Detected default network interface: %s\n", iface)
 
-	tw := &TCPWatch{
-		startTime:        time.Now(),
-		values:           make([]float64, 0, GRAPH_WIDTH),
-		minMbit:          math.MaxFloat64,
-		ramTotal:         getTotalRAM(),
-		isCapturing:      false,
-		currentPcapFile:  "",
-		blockedIPs:       make(map[string]time.Time),
-		blacklistCount:   0,
-		attackingIPs:     make(map[string]string),
-		lastDisplayIndex: 0,
-		iface:            iface,
-		whitelistedIPs:   make(map[string]bool),
-		analyzer: &PatternAnalyzer{
-			patterns:   make(map[string]*AttackPattern),
-			sampleSize: 1000,
-			threshold:  100,
-			mu:         sync.RWMutex{},
-		},
-		bpfRules: make(map[string]string),
-		attackState: AttackState{
-			isOngoing:   false,
-			attackerIPs: make(map[string]bool),
-		},
-		lastAlertTime: time.Now(),
-	}
+    tw := &TCPWatch{
+        stopAnalysis:    make(chan struct{}),
+        startTime:       time.Now(),
+        values:          make([]float64, 0, GRAPH_WIDTH),
+        minMbit:         math.MaxFloat64,
+        ramTotal:        getTotalRAM(),
+        isCapturing:     false,
+        currentPcapFile: "",
+        blockedIPs:      make(map[string]time.Time),
+        blacklistCount:  0,
+        attackingIPs:    make(map[string]string),
+        lastDisplayIndex: 0,
+        iface:           iface,
+        whitelistedIPs:  make(map[string]bool),
+        analyzer: &PatternAnalyzer{
+            patterns:   make(map[string]*AttackPattern),
+            sampleSize: 1000,
+            threshold:  100,
+            mu:         sync.RWMutex{},
+        },
+        bpfRules: make(map[string]string),
+        attackState: AttackState{
+            isOngoing:   false,
+            attackerIPs: make(map[string]bool),
+        },
+        lastAlertTime: time.Now(),
+        extractFlags: func(packet string) []string {
+            var flags []string
+            if strings.Contains(packet, "Flags [") {
+                start := strings.Index(packet, "Flags [") + 7
+                end := strings.Index(packet[start:], "]") + start
+                if start > 7 && end > start {
+                    flagPart := packet[start:end]
+                    for _, flag := range []string{"S", "A", "F", "R", "P", "U", "E", "C"} {
+                        if strings.Contains(flagPart, flag) {
+                            flags = append(flags, flag)
+                        }
+                    }
+                }
+            }
+            return flags
+        },
+    }
 
-	tw.systemIP = tw.getServerIP()
-	tw.updateSystemInfo()
+    tw.systemIP = tw.getServerIP()
+    tw.updateSystemInfo()
+    tw.loadWhitelist("whitelist.txt")
+    go tw.startPacketAnalysis(tw.iface)
 
-	
-	tw.loadWhitelist("whitelist.txt")
-
-	go tw.startPacketAnalysis(tw.iface)
-
-	return tw
+    return tw
 }
 
 func (tw *TCPWatch) logBlacklistedIP(entry BlacklistEntry) {
@@ -835,18 +901,20 @@ return nil
 }
 
 
-func startPacketCapture(interfaceName string, reason string) string {
+func (tw *TCPWatch) startPacketCapture(interfaceName string, reason string) string {
     timestamp := time.Now().Format("01-02-06_15_04_05")
     filename := fmt.Sprintf("attack_dump_%s_%s.pcap", reason, timestamp)
-    
+
     handle, err := pcap.OpenLive(interfaceName, 65535, true, pcap.BlockForever)
     if err != nil {
+        fmt.Printf("Failed to open interface %s: %v\n", interfaceName, err)
         return ""
     }
     defer handle.Close()
 
     f, err := os.Create(filename)
     if err != nil {
+        fmt.Printf("Failed to create pcap file: %v\n", err)
         return ""
     }
     defer f.Close()
@@ -854,6 +922,7 @@ func startPacketCapture(interfaceName string, reason string) string {
     w := pcapgo.NewWriter(f)
     err = w.WriteFileHeader(65535, handle.LinkType())
     if err != nil {
+        fmt.Printf("Failed to write pcap file header: %v\n", err)
         return ""
     }
 
@@ -863,13 +932,18 @@ func startPacketCapture(interfaceName string, reason string) string {
     for {
         select {
         case <-timeout:
+            fmt.Println("Packet capture finished.")
             return filename
         default:
             packet, err := packetSource.NextPacket()
             if err != nil {
                 continue
             }
-            w.WritePacket(packet.Metadata().CaptureInfo, packet.Data())
+            err = w.WritePacket(packet.Metadata().CaptureInfo, packet.Data())
+            if err != nil {
+                fmt.Printf("Failed to write packet: %v\n", err)
+            }
+            f.Sync()
         }
     }
 }
@@ -1549,27 +1623,32 @@ fmt.Printf("%s %-*s %s\n",
         fmt.Println("Failed to clear temporary IP list:", err)
     }
 }
-
-    fmt.Printf("%s %-*s %s\n", 
+fmt.Printf("%s %-*s %s\n", 
+    colorGray + boxVertical,
+    boxWidth-4,
+    "",
+    colorGray + boxVertical)
+if tw.isCapturing {
+    fmt.Printf("%s%s%-*s%s%s\n",
+        colorGray + boxVertical,
+        colorYellowBg,
+        boxWidth-2,
+        "Packet capture in progress... Recording to: "+tw.currentPcapFile,
+        colorBgReset,
+        colorGray + boxVertical)
+} else {
+    fmt.Printf("%s %-*s %s\n",
         colorGray + boxVertical,
         boxWidth-4,
         "",
         colorGray + boxVertical)
-
-    if tw.isCapturing && tw.currentPcapFile != "" {
-        fmt.Printf("%s%-*s%s\n",
-            colorYellowBg,
-            boxWidth,
-            fmt.Sprintf("Packet capture in progress... Recording to: %s", tw.currentPcapFile),
-            colorReset)
-    }
-
-    fmt.Printf("%s%s%s%s%s\n",
-        colorGray,
-        boxBottomLeft,
-        strings.Repeat(boxHorizontal, boxWidth-2),
-        boxBottomRight,
-        colorReset)
+}
+fmt.Printf("%s%s%s%s%s\n",
+    colorGray,
+    boxBottomLeft,
+    strings.Repeat(boxHorizontal, boxWidth-2),
+    boxBottomRight,
+    colorReset)
 }
 
 func getServerIP() string {
