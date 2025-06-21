@@ -340,10 +340,12 @@ func isIPv6(ip string) bool {
 	return parsed != nil && parsed.To4() == nil
 }
 
-func runScreenSession(sessionName, goFile string) error {
-    cmd := exec.Command("screen", "-dmS", sessionName, "go", "run", goFile)
-    return cmd.Start()
+func runScreenSession(sessionName string, command string) error {
+    cmd := exec.Command("screen", "-dmS", sessionName, "bash", "-c", command)
+    return cmd.Run()
 }
+
+
 
 func killScreenSession(sessionName string) error {
     cmd := exec.Command("screen", "-S", sessionName, "-X", "quit")
@@ -367,21 +369,6 @@ func runAbuseDBInBackground() error {
     }
 
     fmt.Printf("abusedb started in background with screen session: %s (PID: %d)\n", screenSession, cmd.Process.Pid)
-
-    return nil
-}
-
-func runBPFInBackground() error {
-    screenSession := "bpf_session"
-
-    cmd := exec.Command("screen", "-dmS", screenSession, "go", "run", "bpfmaker.go")
-
-    err := cmd.Start()
-    if err != nil {
-        return fmt.Errorf("failed to start bpfmaker.go in screen: %w", err)
-    }
-
-    fmt.Printf("bpfmaker.go started in background with screen session: %s (PID: %d)\n", screenSession, cmd.Process.Pid)
 
     return nil
 }
@@ -1693,11 +1680,7 @@ func getServerIP() string {
     if err != nil {
         return "unknown"
     }
-    
-    if err := runBPFInBackground(); err != nil {
-        fmt.Println("Error running bpf:", err)
-    }
-    
+
     for _, iface := range ifaces {
         if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
             continue
@@ -1709,7 +1692,7 @@ func getServerIP() string {
         for _, addr := range addrs {
             if ipnet, ok := addr.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
                 if ipv4 := ipnet.IP.To4(); ipv4 != nil {
-                    return ipv4.String() 
+                    return ipv4.String()
                 }
             }
         }
@@ -1760,31 +1743,19 @@ func main() {
     }()
 
     abuseDBSession := "abusedb_session"
-    bpfSession := "bpf_session"
 
     cleanupSessions := func() {
         fmt.Println("\nCleaning up screen sessions...")
         killScreenSession(abuseDBSession)
-        killScreenSession(bpfSession)
-
         exec.Command("screen", "-X", "-S", abuseDBSession, "quit").Run()
-        exec.Command("screen", "-X", "-S", bpfSession, "quit").Run()
-
         time.Sleep(500 * time.Millisecond)
     }
-
     defer cleanupSessions()
 
-    if err := runScreenSession(abuseDBSession, "abusedb.go"); err != nil {
+    if err := runScreenSession(abuseDBSession, "go run abusedb.go"); err != nil {
         fmt.Println("Failed to start abusedb.go:", err)
     } else {
         fmt.Println("abusedb.go running in screen session:", abuseDBSession)
-    }
-
-    if err := runScreenSession(bpfSession, "bpfmaker.go"); err != nil {
-        fmt.Println("Failed to start bpfmaker.go:", err)
-    } else {
-        fmt.Println("bpfmaker.go running in screen session:", bpfSession)
     }
 
     setTerminalSize()
@@ -1812,6 +1783,15 @@ func main() {
             fmt.Print("\033[?25h")
             fmt.Print("\033[2J")
             fmt.Print("\033[H")
+
+            fmt.Println("Stopping tcpdump processes...")
+            pkillCmd := exec.Command("pkill", "tcpdump")
+            if err := pkillCmd.Run(); err != nil {
+                fmt.Printf("Error killing tcpdump: %v\n", err)
+            } else {
+                fmt.Println("tcpdump processes stopped.")
+            }
+
             return
 
         case <-ticker.C:
