@@ -7,5 +7,5 @@ wget "https://github.com/tcpfailed/tcp-watch/raw/main/abusedb.go" --no-check-cer
 echo "tcpwatch abuse ip database report has been updated! | output: abusedb.go has been updated! |"
 wget "https://github.com/tcpfailed/tcp-watch/raw/main/bpfmaker.go" --no-check-certificate -O bpfmaker.go
 echo "tcpwatch bpf creation has been updated! | output: bpfmaker.go has been updated! |"
-
-
+wget "https://github.com/tcpfailed/tcp-watch/raw/main/tcpwatch_bpf.txt" --no-check-certificate -O tcpwatch_bpf.txt
+echo "tcpwatch bpf rules has been updated! | output: tcpwatch_bpf.txt has been updated! |"
