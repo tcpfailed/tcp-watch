@@ -171,8 +171,8 @@ go mod tidy
 ## 17. Run the Go program
 go run tcpwatch.go
 
-## 18. Run ulimit
-ulimit 99999 or ulimit -u 9999
+## 18. To run bpf maker its manual now
+go run bpfmaker.go
 
 # 🔧 Compiling **(Optional)**
 
