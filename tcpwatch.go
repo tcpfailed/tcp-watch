@@ -1766,15 +1766,13 @@ func main() {
         fmt.Println("\nCleaning up screen sessions...")
         killScreenSession(abuseDBSession)
         killScreenSession(bpfSession)
-        
+
         exec.Command("screen", "-X", "-S", abuseDBSession, "quit").Run()
         exec.Command("screen", "-X", "-S", bpfSession, "quit").Run()
-        
-        
+
         time.Sleep(500 * time.Millisecond)
     }
 
-    
     defer cleanupSessions()
 
     if err := runScreenSession(abuseDBSession, "abusedb.go"); err != nil {
@@ -1803,19 +1801,24 @@ func main() {
 
     iteration := 0
 
+    divisor := 600 / intervalMS
+    if divisor == 0 {
+        divisor = 1
+    }
+
     for {
         select {
         case <-sigChan:
             fmt.Print("\033[?25h")
             fmt.Print("\033[2J")
             fmt.Print("\033[H")
-            return 
+            return
 
         case <-ticker.C:
             tw.updateSystemInfo()
             tw.updateNetworkStats()
 
-            if iteration%(600/intervalMS) == 0 {
+            if iteration%divisor == 0 {
                 tw.updateIncomingIPs()
             }
 
