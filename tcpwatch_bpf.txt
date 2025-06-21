@@ -1,0 +1,177 @@
+http|tcp port 80
+https|tcp port 443
+https_extra|tcp port 6969
+ssh|tcp port 22
+ftp|tcp port 21
+smtp|tcp port 25
+pop3|tcp port 110
+imap|tcp port 143
+ntp|udp port 123
+ntp_extra|udp port 6969
+ntp_alt|udp port 1234
+mysql|tcp port 3306
+postgres|tcp port 5432
+mongodb|tcp port 27017
+redis|tcp port 6379
+memcached|udp port 11211
+rdp|tcp port 3389
+vnc|tcp port 5900
+sip|udp port 5060
+rtp|udp portrange 16384-32767
+snmp|udp port 161
+ldap|tcp port 389
+kerberos|udp port 88
+tftp|udp port 69
+dns|udp port 53
+dhcp|udp port 67 or udp port 68
+smb|tcp port 445
+netbios_ns|udp port 137
+netbios_ss|udp port 138
+netbios_dgm|udp port 139
+telnet|tcp port 23
+git|tcp port 9418
+elasticsearch|tcp port 9200
+cassandra|tcp port 9042
+
+openvpn_udp|udp port 1194
+openvpn_tcp|tcp port 1194
+wireguard_udp|udp port 51820
+wireguard_alt_udp|udp port 51821
+
+bitcoin|tcp port 8333
+docker|tcp port 2375
+kubernetes_api|tcp port 6443
+snmp_trap|udp port 162
+syslog|udp port 514
+radius_auth|udp port 1812
+radius_acct|udp port 1813
+ntp_monlist|udp port 123 and udp[40:4] == 0x00000001
+
+tcp_syn_only|tcp[tcpflags] & tcp-syn != 0 and tcp[tcpflags] & tcp-ack == 0
+tcp_syn_ack|tcp[tcpflags] & (tcp-syn|tcp-ack) == (tcp-syn|tcp-ack)
+tcp_ack_only|tcp[tcpflags] & tcp-ack != 0 and tcp[tcpflags] & (tcp-syn|tcp-fin|tcp-rst) == 0
+tcp_rst_only|tcp[tcpflags] & tcp-rst != 0
+tcp_psh_only|tcp[tcpflags] & tcp-psh != 0
+tcp_fin_only|tcp[tcpflags] & tcp-fin != 0 and tcp[tcpflags] & tcp-ack == 0
+tcp_fin_ack|tcp[tcpflags] & (tcp-fin|tcp-ack) == (tcp-fin|tcp-ack)
+tcp_urg_only|tcp[tcpflags] & tcp-urg != 0
+tcp_null_scan|tcp[13] = 0
+tcp_xmas_scan|tcp[13] = 41
+tcp_fin_scan|tcp[13] = 1
+tcp_ack_scan|tcp[13] = 16
+tcp_push_ack|tcp[tcpflags] & (tcp-psh|tcp-ack) == (tcp-psh|tcp-ack)
+tcp_syn_rst|tcp[tcpflags] & (tcp-syn|tcp-rst) == (tcp-syn|tcp-rst)
+
+fragmented|ip[6:2] & 0x1fff != 0
+ip_fragments|ip[6:2] & 0x1fff != 0
+large_packets|greater 1500
+small_packets|less 128
+
+ip_options|ip[0] & 0xf > 5
+tcp_options|tcp[12] & 0xf0 != 0
+
+tcp_window_size_0|tcp[14:2] = 0
+tcp_window_size_large|tcp[14:2] > 10000
+
+udp_payload_53|udp port 53 and greater 0
+tcp_payload_80|tcp port 80 and greater 0
+tcp_payload_443|tcp port 443 and greater 0
+
+possible_scan|tcp[tcpflags] == tcp-syn
+dns_query|udp port 53 and udp[10] & 0x80 = 0
+dns_response|udp port 53 and udp[10] & 0x80 != 0
+dhcp_discover|udp src port 68 and udp dst port 67
+dhcp_offer|udp src port 67 and udp dst port 68
+ssl_handshake|tcp port 443 and tcp[((tcp[12] & 0xf0) >> 2)] = 22
+
+broadcast|broadcast
+multicast|multicast
+
+to_google|host 8.8.8.8
+from_google|src host 8.8.8.8
+to_localhost|dst host 127.0.0.1
+to_localnet|net 192.168.0.0/16
+to_subnet|net 10.0.0.0/8
+to_corpnet|net 172.16.0.0/12
+
+inbound_tcp|tcp dst port 80
+outbound_tcp|tcp src port 80
+inbound_udp|udp dst port 53
+outbound_dns|udp src port 53
+
+tcp_syn_fragments|tcp[tcpflags] & tcp-syn != 0 and ip[6:2] & 0x1fff != 0
+udp_broadcast|udp and broadcast
+tcp_retransmissions|tcp[tcpflags] & tcp-ack != 0 and tcp[13] & tcp-fin != 0
+tcp_ecn|tcp[13] & 0x40 != 0
+tcp_cwr|tcp[13] & 0x80 != 0
+tcp_bad_checksum|ip[10:2] != 0xffff
+
+tcp_no_payload|tcp and less 54
+udp_no_payload|udp and less 42
+tcp_keepalive|tcp[tcpflags] == tcp-ack and tcp[13] & tcp-psh == 0 and tcp[13] & tcp-fin == 0
+
+port_6969_tcp|tcp port 6969
+port_6969_udp|udp port 6969
+port_6969_syn|tcp port 6969 and tcp[tcpflags] & tcp-syn != 0
+port_6969_ack|tcp port 6969 and tcp[tcpflags] & tcp-ack != 0
+port_6969_rst|tcp port 6969 and tcp[tcpflags] & tcp-rst != 0
+port_6969_psh|tcp port 6969 and tcp[tcpflags] & tcp-psh != 0
+port_6969_fin|tcp port 6969 and tcp[tcpflags] & tcp-fin != 0
+port_6969_payload|tcp port 6969 and greater 0
+port_6969_syn_ack|tcp port 6969 and tcp[tcpflags] & (tcp-syn|tcp-ack) == (tcp-syn|tcp-ack)
+port_6969_null_scan|tcp port 6969 and tcp[13] = 0
+port_6969_xmas_scan|tcp port 6969 and tcp[13] = 41
+udp_payload_6969|udp port 6969 and greater 0
+
+port_1234_tcp|tcp port 1234
+port_1234_udp|udp port 1234
+port_1234_syn|tcp port 1234 and tcp[tcpflags] & tcp-syn != 0
+port_1234_ack|tcp port 1234 and tcp[tcpflags] & tcp-ack != 0
+port_1234_rst|tcp port 1234 and tcp[tcpflags] & tcp-rst != 0
+port_1234_psh|tcp port 1234 and tcp[tcpflags] & tcp-psh != 0
+port_1234_fin|tcp port 1234 and tcp[tcpflags] & tcp-fin != 0
+port_1234_payload|tcp port 1234 and greater 0
+port_1234_syn_ack|tcp port 1234 and tcp[tcpflags] & (tcp-syn|tcp-ack) == (tcp-syn|tcp-ack)
+port_1234_null_scan|tcp port 1234 and tcp[13] = 0
+port_1234_xmas_scan|tcp port 1234 and tcp[13] = 41
+udp_payload_1234|udp port 1234 and greater 0
+
+port_80_syn|tcp port 80 and tcp[tcpflags] & tcp-syn != 0
+port_80_ack|tcp port 80 and tcp[tcpflags] & tcp-ack != 0
+port_80_rst|tcp port 80 and tcp[tcpflags] & tcp-rst != 0
+port_80_psh|tcp port 80 and tcp[tcpflags] & tcp-psh != 0
+port_80_fin|tcp port 80 and tcp[tcpflags] & tcp-fin != 0
+port_80_payload|tcp port 80 and greater 0
+port_80_null_scan|tcp port 80 and tcp[13] = 0
+port_80_xmas_scan|tcp port 80 and tcp[13] = 41
+
+port_443_syn|tcp port 443 and tcp[tcpflags] & tcp-syn != 0
+port_443_ack|tcp port 443 and tcp[tcpflags] & tcp-ack != 0
+port_443_rst|tcp port 443 and tcp[tcpflags] & tcp-rst != 0
+port_443_psh|tcp port 443 and tcp[tcpflags] & tcp-psh != 0
+port_443_fin|tcp port 443 and tcp[tcpflags] & tcp-fin != 0
+port_443_payload|tcp port 443 and greater 0
+port_443_null_scan|tcp port 443 and tcp[13] = 0
+port_443_xmas_scan|tcp port 443 and tcp[13] = 41
+
+gre_proto|ip proto 47
+esp_proto|ip proto 50
+ah_proto|ip proto 51
+ipip_proto|ip proto 4
+sctp_proto|ip proto 132
+icmp_proto|ip proto 1
+igmp_proto|ip proto 2
+raw_proto|ip proto 255
+tap_proto|ip proto 17 and udp port 6666
+
+ssh_flood_syn|tcp port 22 and tcp[tcpflags] & tcp-syn != 0 and tcp[13] & tcp-ack == 0 and count > 100 in 10 seconds
+ssh_flood_ack|tcp port 22 and tcp[tcpflags] & tcp-ack != 0 and count > 100 in 10 seconds
+
+mixed_flood_syn|tcp[tcpflags] & tcp-syn != 0 and count > 200 in 10 seconds
+mixed_flood_ack|tcp[tcpflags] & tcp-ack != 0 and count > 200 in 10 seconds
+mixed_flood_rst|tcp[tcpflags] & tcp-rst != 0 and count > 200 in 10 seconds
+mixed_flood_fin|tcp[tcpflags] & tcp-fin != 0 and count > 200 in 10 seconds
+mixed_flood_psh|tcp[tcpflags] & tcp-psh != 0 and count > 200 in 10 seconds
+
+mixed_flood_udp|udp and count > 200 in 10 seconds
+mixed_flood_icmp|icmp_proto and count > 200 in 10 seconds
