@@ -44,6 +44,9 @@ A real-time network monitoring & DDoS protection tool written in Go, featuring l
   - Fixed bpf creation actually creates and applys bpf rules
   - Not an improvement but bpf is now manual use by go run bpfmaker.go
 
+# ⚠️ USER WARNING
+When under an attack with high cpu usage and its freezing. This is due to running the bpf.go script under high cpu usage since it constantly create and captures packets for bpf. If you are having freezing issues on the script just end bpf.go whichever way you started it if its freezing. This is a simple issue due to constant capture. This is the solution 
+
 # 📋 API HELP
 You need to use the /data endpoint if you plan to run this on a dstat server but if you dont plan to than you can enjoy the dashboard with statistics and a live chart  ![image](https://github.com/user-attachments/assets/f7452a87-348b-4f4e-a400-13310a0b75e1) 
 
