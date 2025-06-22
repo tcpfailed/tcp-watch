@@ -316,23 +316,37 @@ func normalizeIPv6(ip string) string {
 
 
 func (b *Blocker) BlockIP(ip string, reason string) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+    b.mu.Lock()
+    defer b.mu.Unlock()
 
-	if b.blockedIPS[ip] > 0 {
-		return
-	}
-	var cmd *exec.Cmd
-	if isIPv6(ip) {
-		cmd = exec.Command("ip6tables", "-A", "INPUT", "-s", ip, "-j", "DROP")
-	} else {
-		cmd = exec.Command("iptables", "-A", "INPUT", "-s", ip, "-j", "DROP")
-	}
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("Failed to block IP %s: %v\n", ip, err)
-		return
-	}
-	b.blockedIPS[ip] = 1
+    if b.blockedIPS[ip] > 0 {
+        return
+    }
+
+    isV6 := isIPv6(ip)
+    if isV6 {
+        cmd := exec.Command("ip6tables", "-A", "INPUT", "-s", ip, "-j", "DROP")
+        if err := cmd.Run(); err != nil {
+            fmt.Printf("Failed to block IPv6 %s: %v\n", ip, err)
+            return
+        }
+        b.blockedIPS[ip] = 1
+        return
+    }
+
+    cidr24 := ipToCIDR24(ip)
+    cmds := []*exec.Cmd{
+        exec.Command("iptables", "-A", "INPUT", "-s", ip, "-j", "DROP"),      
+        exec.Command("iptables", "-A", "INPUT", "-s", cidr24, "-j", "DROP"),  
+    }
+
+    for _, cmd := range cmds {
+        if err := cmd.Run(); err != nil {
+            fmt.Printf("Failed to block %s: %v\n", ip, err)
+        }
+    }
+
+    b.blockedIPS[ip] = 1
 }
 
 func isIPv6(ip string) bool {
@@ -416,6 +430,20 @@ Loading tcp-watch`
     time.Sleep(1 * time.Second)
 
     fmt.Print("\033[H\033[2J") 
+}
+
+func ipToCIDR24(ipStr string) string {
+    ip := net.ParseIP(ipStr)
+    if ip == nil {
+        return ""
+    }
+
+    ipv4 := ip.To4()
+    if ipv4 == nil {
+        return ""
+    }
+
+    return fmt.Sprintf("%d.%d.%d.0/24", ipv4[0], ipv4[1], ipv4[2])
 }
 
 func getDefaultInterface() (string, error) {
@@ -888,40 +916,46 @@ logEntry := fmt.Sprintf("[%s] Blocked IP: %s | Source Port: %s | Target Port: %s
 }
 
 func (tw *TCPWatch) blacklistIP(ip string, srcPort, targetPort, protocol, reason string) error {
-	if tw.whitelistedIPs[ip] {
-		return nil
-	}
-	if _, exists := tw.blockedIPs[ip]; exists {
-		return nil
-	}
+    if tw.whitelistedIPs[ip] {
+        return nil
+    }
+    if _, exists := tw.blockedIPs[ip]; exists {
+        return nil
+    }
 
-	ipAddr := strings.Split(ip, "%")[0]
-	isV6 := isIPv6(ipAddr)
+    ipAddr := strings.Split(ip, "%")[0]
+    isV6 := isIPv6(ipAddr)
 
-	cmd := exec.Command(
-		func() string {
-			if isV6 { return "ip6tables" }
-			return "iptables"
-		}(),
-		"-A", "INPUT", "-s", ipAddr, "-j", "DROP",
-	)
+    var cmds []*exec.Cmd
+    if isV6 {
+        cmds = []*exec.Cmd{
+            exec.Command("ip6tables", "-A", "INPUT", "-s", ipAddr, "-j", "DROP"),
+        }
+    } else {
+        cidr24 := ipToCIDR24(ipAddr)
+        cmds = []*exec.Cmd{
+            exec.Command("iptables", "-A", "INPUT", "-s", ipAddr, "-j", "DROP"),
+            exec.Command("iptables", "-A", "INPUT", "-s", cidr24, "-j", "DROP"),
+        }
+    }
 
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("ip block cmd failed: %w", err)
-	}
+    for _, cmd := range cmds {
+        if err := cmd.Run(); err != nil {
+            return fmt.Errorf("ip block cmd failed: %w", err)
+        }
+    }
 
-entry := BlacklistEntry{
-    IP:         ipAddr,
-    SourcePort: srcPort,
-    TargetPort: targetPort,
-    Timestamp:  time.Now(),
-}
+    entry := BlacklistEntry{
+        IP:         ipAddr,
+        SourcePort: srcPort,
+        TargetPort: targetPort,
+        Timestamp:  time.Now(),
+    }
 
-tw.logBlacklistedIP(entry)
-
-tw.blockedIPs[ipAddr] = entry.Timestamp
-tw.blacklistCount++
-return nil
+    tw.logBlacklistedIP(entry)
+    tw.blockedIPs[ipAddr] = entry.Timestamp
+    tw.blacklistCount++
+    return nil
 }
 
 
