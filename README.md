@@ -46,6 +46,7 @@ A real-time network monitoring & DDoS protection tool written in Go, featuring l
   - Fixed when pcaps are in progress not displaying this was due to not having the feature that called to check to see if a pcap was currently in progress
   - Fixed bpf creation actually creates and applys bpf rules
   - Not an improvement but bpf is now manual use by go run bpfmaker.go
+  - Added cidr /24 blacklist for faster blocking, more efficient at blocking the subnet of that attacking ip, and after blocking /24 subnet it blocks the ip with /32 for specific blocking of that ip. Because /24 is for multiple ips and /32 is for specific ip address. This makes it more effective at mitigating traffic. This is because the /24 blacklist the ranges rather than one ip from that offending range, therefore preventing ips from that range coming back and sending more malicious traffic
 
 # ⚠️ USER WARNING
 When under an attack with high cpu usage and its freezing. This is due to running the bpf.go script under high cpu usage since it constantly create and captures packets for bpf. If you are having freezing issues on the script just end bpf.go whichever way you started it if its freezing. This is a simple issue due to constant capture. This is the solution 
